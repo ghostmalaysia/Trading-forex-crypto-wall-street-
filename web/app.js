@@ -4,8 +4,8 @@ const MARKET = [
   { symbol: 'BTC/USD', market: 'Crypto', price: 68420, change: 1.85, history: seed(68420, 220) },
   { symbol: 'ETH/USD', market: 'Crypto', price: 3825, change: 2.14, history: seed(3825, 18) },
   { symbol: 'XAU/USD', market: 'Commodities', price: 2342.5, change: 0.63, history: seed(2342.5, 4.2) },
-  { symbol: 'US100', market: 'Stocks', price: 18345.2, change: -0.54, history: seed(18345.2, 35) },
-  { symbol: 'US30', market: 'Stocks', price: 39120.8, change: 0.21, history: seed(39120.8, 55) },
+  { symbol: 'AAPL.US', market: 'Stocks', price: 192.4, change: 0.31, history: seed(192.4, 1.4) },
+  { symbol: 'NVDA.US', market: 'Stocks', price: 120.8, change: -0.22, history: seed(120.8, 1.8) },
 ];
 MARKET.forEach(m => { m.referencePrice = m.price / (1 + m.change / 100); });
 
@@ -17,15 +17,17 @@ const NEWS = [
   { title: 'AI market monitors flag volatility in tech indices', meta: 'AI • 1h ago • System Insight mock' },
 ];
 
-const state = { selected: 'BTC/USD', timeframe: '1D', userKey: null, memoryReady: false };
+const state = { selected: 'BTC/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '' };
 const $ = (id) => document.getElementById(id);
 
 function seed(base, vol) {
   let v = base;
-  return Array.from({ length: 48 }, (_, i) => {
+  const values = Array.from({ length: 48 }, (_, i) => {
     v += (Math.sin(i / 4) + (Math.random() - 0.5)) * vol;
     return +v.toFixed(base > 100 ? 2 : 5);
   });
+  values[values.length - 1] = base;
+  return values;
 }
 
 function fmtPrice(n) { return n > 100 ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : n.toFixed(5); }
@@ -39,11 +41,15 @@ function renderStats() {
   const avg = MARKET.reduce((a, m) => a + m.change, 0) / MARKET.length;
   const cards = [
     { label: 'Selected Asset', value: c.symbol, delta: `${c.market} • ${fmtPrice(c.price)}`, cls: '' },
-    { label: '24h Change', value: fmtChange(c.change), delta: c.change >= 0 ? 'Bullish momentum' : 'Bearish pressure', cls: c.change >= 0 ? 'up' : 'down' },
+    { label: '24h Change', value: fmtChange(c.change), delta: c.change >= 0 ? 'Up vs previous close' : 'Down vs previous close', cls: c.change >= 0 ? 'up' : 'down' },
     { label: 'Market Breadth', value: `${gainers}/${MARKET.length}`, delta: 'Assets in positive territory', cls: 'up' },
     { label: 'Avg. Move', value: fmtChange(avg), delta: 'Across tracked watchlist', cls: avg >= 0 ? 'up' : 'down' },
   ];
   $('stats').innerHTML = cards.map(c => `<div class="stat"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div><div class="delta ${c.cls}">${c.delta}</div></div>`).join('');
+  const status = document.querySelector('.sidebar-card small');
+  if (status) status.textContent = state.provider === 'longbridge' ? 'Live quotes • Longbridge' : `Mock data${state.providerDetail ? ` • ${state.providerDetail}` : ' • no live provider connected'}`;
+  const dot = document.querySelector('.sidebar-card .dot');
+  if (dot) dot.classList.toggle('offline', state.provider !== 'longbridge');
 }
 
 function renderWatchlist() {
@@ -56,9 +62,9 @@ function renderWatchlist() {
     </tr>`).join('');
   document.querySelectorAll('#watchlistBody tr').forEach(tr => {
     const selectSymbol = () => {
-    state.selected = tr.dataset.symbol;
-    $('symbolSelect').value = state.selected;
-    renderAll();
+      state.selected = tr.dataset.symbol;
+      $('symbolSelect').value = state.selected;
+      renderAll();
     };
     tr.addEventListener('click', selectSymbol);
     tr.addEventListener('keydown', e => {
@@ -127,7 +133,8 @@ function drawChart() {
   badge.style.color = c.change >= 0 ? '#9ff0bf' : '#ffb3b3';
   badge.style.background = c.change >= 0 ? 'rgba(46,204,113,.12)' : 'rgba(255,107,107,.12)';
   badge.style.borderColor = c.change >= 0 ? 'rgba(46,204,113,.25)' : 'rgba(255,107,107,.25)';
-  $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(last)}</strong></span><span>High: ${fmtPrice(max)}</span><span>Low: ${fmtPrice(min)}</span><span>Mode: Mock data</span>`;
+  const source = c.dataSource === 'longbridge' ? 'Longbridge live quote' : 'Simulated data';
+  $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(c.price)}</strong></span><span>High: ${fmtPrice(max)}</span><span>Low: ${fmtPrice(min)}</span><span>Source: ${source}</span>`;
 }
 
 function aiReply(text) {
@@ -189,6 +196,7 @@ async function initChat() {
 function tickClock() { $('clock').textContent = new Date().toLocaleString(); }
 function randomWalk() {
   MARKET.forEach(m => {
+    if (m.dataSource === 'longbridge') return;
     const vol = m.price > 1000 ? 25 : m.price > 100 ? 8 : m.price > 10 ? 0.8 : 0.0009;
     const delta = (Math.random() - 0.5) * vol;
     m.price = +(m.price + delta).toFixed(m.price > 100 ? 2 : 5);
@@ -196,6 +204,33 @@ function randomWalk() {
     m.history.push(m.price);
     if (m.history.length > 60) m.history.shift();
   });
+}
+
+async function refreshLongbridgeQuotes() {
+  const symbols = MARKET.filter(m => m.market === 'Stocks').map(m => m.symbol);
+  try {
+    const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Quote service unavailable');
+    for (const quote of payload.quotes || []) {
+      const item = MARKET.find(m => m.symbol === quote.symbol);
+      if (!item || !Number.isFinite(quote.price)) continue;
+      item.price = quote.price;
+      if (Number.isFinite(quote.previousClose) && quote.previousClose > 0) {
+        item.referencePrice = quote.previousClose;
+        item.change = +((item.price / item.referencePrice - 1) * 100).toFixed(2);
+      }
+      item.dataSource = 'longbridge';
+      item.history.push(item.price);
+      if (item.history.length > 60) item.history.shift();
+    }
+    state.provider = MARKET.some(m => m.dataSource === 'longbridge') ? 'longbridge' : 'mock';
+    state.providerDetail = state.provider === 'mock' ? 'waiting for a Longbridge quote' : '';
+  } catch (error) {
+    state.provider = MARKET.some(m => m.dataSource === 'longbridge') ? 'longbridge' : 'mock';
+    state.providerDetail = state.provider === 'mock' ? 'start server.mjs and connect Longbridge to enable live quotes' : 'last Longbridge quote retained';
+  }
+  renderAll();
 }
 
 function renderAll() { renderStats(); renderWatchlist(); renderNews(); drawChart(); }
@@ -211,7 +246,7 @@ async function persistProfile() {
 function bind() {
   $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; renderAll(); await persistProfile(); });
   $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; drawChart(); await persistProfile(); });
-  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); });
+  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); });
   document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', () => {
     document.querySelectorAll('.nav a').forEach(item => item.classList.toggle('active', item === link));
   }));
@@ -237,7 +272,8 @@ async function boot() {
     if (note) note.textContent = 'Local mock mode • Configure Supabase for cloud memory';
   }
   setInterval(tickClock, 1000);
-  setInterval(() => { randomWalk(); renderAll(); }, 15000);
+  refreshLongbridgeQuotes();
+  setInterval(() => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); }, 15000);
 }
 
 boot();

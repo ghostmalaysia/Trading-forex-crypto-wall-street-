@@ -18,6 +18,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Responsive layout for desktop/mobile web
 - Working in-page navigation and keyboard-accessible watchlist selection
 - Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
+- Optional Longbridge live quotes for US stocks through a local, read-only Node.js bridge
 
 ## Run locally
 No dependencies required for the static MVP:
@@ -31,6 +32,16 @@ python3 -m http.server 8080
 Or open `web/index.html` directly in a browser.
 
 > **Data status:** the dashboard currently uses generated mock prices, news, and assistant replies. The refresh button advances the mock feed; it does not fetch live market data. Configure Supabase only for optional chat/watchlist memory (see `web/supabase-config.example.js`).
+
+## Optional Longbridge stock quotes
+
+TradeWall can request live quotes for the stock symbols in its watchlist through Longbridge Terminal's local JSON-RPC service. This integration is read-only: the TradeWall bridge only requests quotes and exposes no order or account operations. Forex, crypto, gold, and news remain mock data.
+
+1. Install [Longbridge Terminal](https://github.com/longbridge/longbridge-terminal) and complete its OAuth login with `longbridge auth login`.
+2. Start TradeWall with Node.js 18 or newer: `node server.mjs`.
+3. Open `http://127.0.0.1:8080`. The bridge listens on localhost and starts Longbridge Terminal using `longbridge serve`.
+
+If Longbridge is unavailable or not logged in, the dashboard clearly falls back to simulated quotes. Use `LONGBRIDGE_BIN=/path/to/longbridge` if the executable is not on `PATH`, or `PORT=8090` to change the local web port. The bridge does not expose the JSON-RPC process or any trading methods to the browser.
 
 ## Project Vision
 Build a platform/dashboard for web and Android/iOS that includes:

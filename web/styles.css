@@ -16,6 +16,7 @@
 .sidebar-card{margin-top:24px;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
 .sidebar-card h3{margin:0 0 8px;font-size:14px}.sidebar-card p{margin:0 0 6px;font-size:13px}.sidebar-card small{color:var(--muted)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 0 4px rgba(46,204,113,.15)}
+.dot.offline{background:var(--warn);box-shadow:0 0 0 4px rgba(245,196,81,.13)}
 .main{padding:20px 22px 28px}
 .topbar{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}
 .topbar h2{margin:0;font-size:28px}.topbar p{margin:4px 0 0;color:var(--muted)}
