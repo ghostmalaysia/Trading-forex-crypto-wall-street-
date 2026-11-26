@@ -2,12 +2,13 @@
 
 ## 1. Configure Supabase (cloud memory)
 1. Create a free project at [supabase.com](https://supabase.com).
-2. In SQL Editor, run `supabase/schema.sql`.
-3. Copy `web/supabase-config.example.js` values into `web/supabase-config.js`:
+2. For an existing project, run `supabase/migrations/202611260001_secure_user_memory.sql` in SQL Editor. For a fresh project, run `supabase/schema.sql`.
+3. Enable email sign-up in Supabase Auth and set the project's Site URL.
+4. Copy `web/supabase-config.example.js` to `web/supabase-config.js` and enter:
    - `url`: your project URL
-   - `anonKey`: your anon/public key
+   - `anonKey`: your publishable/anon key (never use `service_role` in the browser)
    - `memoryEnabled: true`
-4. Serve the web app and test chat/watchlist persistence.
+5. Serve the web app, create an account, then sign in to enable private chat/watchlist persistence.
 
 ## 2. Run MVP locally
 ```bash
@@ -19,7 +20,7 @@ python3 -m http.server 8080
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Add `DataProvider` adapters for real market data (free APIs first).
 - Add `AIProvider` abstraction (mock -> free LLM/local model).
-- Add Supabase Auth before production (replace permissive anon MVP policies).
+- Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
 
 ## 4. Safety checklist
 - Keep AI output informational only.

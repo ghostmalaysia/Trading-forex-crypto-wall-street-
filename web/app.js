@@ -166,31 +166,87 @@ function addMsg(role, text) {
 
 async function initChat() {
   $('chatLog').innerHTML = '';
-  addMsg('ai', 'Hello. I am your trading assistant (MVP mock). I can monitor watchlist moves, summarize news, and flag risk. I do not provide financial advice or execute trades.');
+  addMsg('ai', 'Hello. I am the TradeWall demo assistant. Replies are generated locally from sample rules; this is not a connected AI model, financial advice, or a trading service.');
   if (window.SupabaseMemory?.enabled) {
-    const hist = await window.SupabaseMemory.loadChat(state.userKey, 20);
-    if (hist.ok && hist.data?.length) {
-      $('chatLog').innerHTML = '';
-      hist.data.forEach(m => addMsg(m.role === 'user' ? 'user' : 'ai', m.content));
-    }
+    try {
+      const hist = await window.SupabaseMemory.loadChat(state.userKey, 20);
+      if (hist.ok && hist.data?.length) {
+        $('chatLog').innerHTML = '';
+        hist.data.forEach(m => addMsg(m.role === 'user' ? 'user' : 'ai', m.content));
+      }
+    } catch { setAuthStatus('Signed in, but chat history could not be loaded. Check the Supabase migration and RLS policies.'); }
   }
+  if ($('chatForm').dataset.bound) return;
+  $('chatForm').dataset.bound = 'true';
   $('chatForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = $('chatInput').value.trim();
     if (!text) return;
     addMsg('user', text);
     $('chatInput').value = '';
-    if (window.SupabaseMemory?.enabled) {
-      window.SupabaseMemory.saveChat({ user_key: state.userKey, role: 'user', content: text, context: { symbol: state.selected, timeframe: state.timeframe } });
-    }
+    if (window.SupabaseMemory?.enabled) saveChatMessage('user', text);
     const reply = aiReply(text);
     setTimeout(async () => {
       addMsg('ai', reply);
-      if (window.SupabaseMemory?.enabled) {
-        window.SupabaseMemory.saveChat({ user_key: state.userKey, role: 'ai', content: reply, context: { symbol: state.selected, timeframe: state.timeframe } });
-      }
+      if (window.SupabaseMemory?.enabled) saveChatMessage('ai', reply);
     }, 250);
   });
+}
+
+function setAuthStatus(message) {
+  const status = $('authStatus');
+  if (status) status.textContent = message;
+}
+
+function updateAuthUI() {
+  const memory = window.SupabaseMemory;
+  const signedIn = !!memory?.enabled;
+  if (!memory?.configured) setAuthStatus('Cloud memory is off. Add your Supabase URL and publishable key to web/supabase-config.js.');
+  else if (signedIn) setAuthStatus(`Signed in as ${memory.getUserEmail()}. Your cloud memory is private to this account.`);
+  else setAuthStatus('Sign in or create an account to save private chat history and preferences.');
+  $('authForm').hidden = !memory?.configured || signedIn;
+  $('signOutBtn').hidden = !signedIn;
+}
+
+async function saveChatMessage(role, content) {
+  try {
+    await window.SupabaseMemory.saveChat({ user_key: state.userKey, role, content, context: { symbol: state.selected, timeframe: state.timeframe } });
+  } catch { setAuthStatus('Chat is visible in this session, but cloud memory could not be saved. Check the Supabase migration and RLS policies.'); }
+}
+
+async function finishSignIn() {
+  state.userKey = window.SupabaseMemory.getUserKey();
+  updateAuthUI();
+  await initChat();
+  await persistProfile();
+  try {
+    await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
+  } catch { setAuthStatus('Signed in. Watchlist could not be synced; check the Supabase migration and RLS policies.'); }
+}
+
+async function authenticate(mode) {
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value;
+  const buttons = document.querySelectorAll('.auth-actions button');
+  let statusMessage = '';
+  buttons.forEach(button => { button.disabled = true; });
+  setAuthStatus(mode === 'signup' ? 'Creating account…' : 'Signing in…');
+  try {
+    if (mode === 'signup') {
+      const session = await window.SupabaseMemory.signUp(email, password);
+      if (session) { $('authPassword').value = ''; await finishSignIn(); }
+      else statusMessage = 'Account created. Check your email to confirm it, then sign in.';
+    } else {
+      await window.SupabaseMemory.signIn(email, password);
+      $('authPassword').value = '';
+      await finishSignIn();
+    }
+  } catch (error) { statusMessage = error.message || 'Authentication failed.'; }
+  finally {
+    buttons.forEach(button => { button.disabled = false; });
+    updateAuthUI();
+    if (statusMessage) setAuthStatus(statusMessage);
+  }
 }
 
 function tickClock() { $('clock').textContent = new Date().toLocaleString(); }
@@ -237,16 +293,28 @@ function renderAll() { renderStats(); renderWatchlist(); renderNews(); drawChart
 
 async function persistProfile() {
   if (!window.SupabaseMemory?.enabled) return;
-  await window.SupabaseMemory.saveProfile({
-    user_key: state.userKey,
-    preferences: { theme: 'dark', default_symbol: state.selected, timeframe: state.timeframe }
-  });
+  try {
+    await window.SupabaseMemory.saveProfile({
+      user_key: state.userKey,
+      preferences: { theme: 'dark', default_symbol: state.selected, timeframe: state.timeframe }
+    });
+  } catch { setAuthStatus('Signed in, but preferences could not be saved. Check the Supabase migration and RLS policies.'); }
 }
 
 function bind() {
   $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; renderAll(); await persistProfile(); });
   $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; drawChart(); await persistProfile(); });
   $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); });
+  $('authForm').addEventListener('submit', event => { event.preventDefault(); authenticate('signin'); });
+  $('signUpBtn').addEventListener('click', () => {
+    if ($('authForm').reportValidity()) authenticate('signup');
+  });
+  $('signOutBtn').addEventListener('click', async () => {
+    try { await window.SupabaseMemory.signOut(); } catch {}
+    state.userKey = null;
+    updateAuthUI();
+    await initChat();
+  });
   document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', () => {
     document.querySelectorAll('.nav a').forEach(item => item.classList.toggle('active', item === link));
   }));
@@ -254,8 +322,9 @@ function bind() {
 }
 
 async function boot() {
-  state.userKey = window.SupabaseMemory?.getUserKey?.() || localStorage.getItem('tradewall_user_key') || 'local';
-  if (!localStorage.getItem('tradewall_user_key')) localStorage.setItem('tradewall_user_key', state.userKey);
+  await window.SupabaseMemory?.restoreSession?.();
+  state.userKey = window.SupabaseMemory?.getUserKey?.() || null;
+  updateAuthUI();
   renderControls();
   bind();
   renderAll();
@@ -264,12 +333,9 @@ async function boot() {
   if (window.SupabaseMemory?.enabled) {
     state.memoryReady = true;
     await persistProfile();
-    await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
-    const note = document.querySelector('.sidebar-card small');
-    if (note) note.textContent = 'Supabase cloud memory connected';
-  } else {
-    const note = document.querySelector('.sidebar-card small');
-    if (note) note.textContent = 'Local mock mode • Configure Supabase for cloud memory';
+    try {
+      await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
+    } catch { setAuthStatus('Signed in, but watchlist sync failed. Check the Supabase migration and RLS policies.'); }
   }
   setInterval(tickClock, 1000);
   refreshLongbridgeQuotes();

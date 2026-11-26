@@ -19,6 +19,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Working in-page navigation and keyboard-accessible watchlist selection
 - Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
 - Optional Longbridge live quotes for US stocks through a local, read-only Node.js bridge
+- Supabase Auth accounts for private, per-user cloud memory
 
 ## Run locally
 No dependencies required for the static MVP:
@@ -31,7 +32,16 @@ python3 -m http.server 8080
 
 Or open `web/index.html` directly in a browser.
 
-> **Data status:** the dashboard currently uses generated mock prices, news, and assistant replies. The refresh button advances the mock feed; it does not fetch live market data. Configure Supabase only for optional chat/watchlist memory (see `web/supabase-config.example.js`).
+> **Data status:** the dashboard currently uses generated mock prices, news, and assistant replies. The refresh button advances the mock feed; it does not fetch live market data. Supabase stores chat history and preferences only after sign-in.
+
+## Secure Supabase memory
+
+1. In the Supabase SQL Editor, apply [`supabase/migrations/202611260001_secure_user_memory.sql`](supabase/migrations/202611260001_secure_user_memory.sql). This removes the old public policies and grants authenticated users access only to rows matching their Auth user ID.
+2. Enable email sign-up in Supabase Auth and set the project's Site URL to the TradeWall URL.
+3. Copy `web/supabase-config.example.js` to `web/supabase-config.js` and enter the project URL and publishable (or legacy anon) key. Never put a `service_role` key in browser code.
+4. Sign in or create an account in the dashboard to enable cloud memory. Without an authenticated session, chat stays in the current browser session and nothing is saved to Supabase.
+
+The previous MVP used shared anonymous access. Rows written with anonymous browser keys cannot be safely attributed to a new account, so they remain inaccessible under the new policies. Export or manually review any legacy data before removing it.
 
 ## Optional Longbridge stock quotes
 
