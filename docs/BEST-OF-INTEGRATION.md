@@ -15,6 +15,7 @@
 | Mobile | **Expo React Native** | One codebase Android/iOS | React ecosystem | Free OSS |
 | Agent-native CLI | **CLI-Anything** | Generate stateful CLI/SKILL.md for agent control of platform workflows | HKUDS/CLI-Anything | Apache-2.0 |
 | Broker/Execution | **MetaApi (cloud) + Paper broker first** | MT4/MT5 connectivity from web/cloud; official MT5 Python only for Windows VPS worker | MetaApi / MQL5 safety patterns | Paid/free tier |
+| UX benchmark | **TradingView** | Feature parity target: charts, screeners, heatmaps, alerts, calendar/news, paper trading | TradingView | Benchmark/reference |
 | Deployment | **Vercel + Supabase + GitHub Actions** | Simple free-first CI/CD | Modern web stack | Free tiers |
 
 ## What We Combine
