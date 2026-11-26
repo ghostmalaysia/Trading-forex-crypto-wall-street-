@@ -34,6 +34,7 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 - **Tailwind CSS**: rapid dark-theme UI.
 - **TradingView Lightweight Charts / Recharts**: free charting options (MVP can start with simple charts).
 - **TanStack Query**: client data fetching/caching.
+- **Current scaffold**: static HTML/CSS/JS MVP in `web/` for fast iteration; migrate to Next.js in Phase 1.
 
 ### Mobile
 - **Expo React Native**: shared business logic/UI patterns with web where practical.
@@ -52,9 +53,14 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
   - Strategy/study assistant (educational, not financial advice)
   - Task automation suggestions (with confirmation)
 - **Memory/Learning**:
-  - Store user profile, risk preferences, watched assets
+  - Store user profile, risk preferences, watched assets in Supabase
   - Log AI recommendations and outcomes for evaluation
-  - Retrieval layer (embeddings/vector DB later; simple DB first)
+  - Retrieval layer (embeddings/pgvector later; simple DB first)
+
+### Agent-Native Interface (CLI-Anything reference)
+- **Pattern**: expose core workflows as a stateful CLI with `--json` output and `SKILL.md` for agent discovery (inspired by [CLI-Anything](https://github.com/HKUDS/CLI-Anything)).
+- **Target commands**: market quote/watchlist/news/ai-summary/memory sync; all outputs machine-readable.
+- **Safety**: CLI commands are read/analyze by default; any execution action requires explicit confirmation and audit log.
 
 ## Core Modules
 

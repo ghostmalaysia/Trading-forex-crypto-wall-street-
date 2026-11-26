@@ -6,7 +6,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `ARCHITECTURE.md` - system design, stack, modules, data flow
 - `ROADMAP.md` - phased delivery plan
 - `web/` - runnable static MVP dashboard (no build required)
-- `docs/` - product notes and next steps
+- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts)
+- `docs/` - product notes, references, and integration plan
 
 ## MVP Features (current)
 - Dark-theme trading dashboard UI
@@ -34,6 +35,12 @@ Build a platform/dashboard for web and Android/iOS that includes:
 - Dark theme
 - AI that monitors, helps, performs tasks, studies, learns, and improves over time
 - Free-first tooling wherever possible
+
+## Key References (Best-of)
+- **[OpenBB](https://github.com/OpenBB-finance/OpenBB)** - data/analytics platform patterns (adapter-based market data).
+- **[Superalgos](https://github.com/Superalgos/Superalgos)** - safe agent/workflow automation ideas (paper-trade, confirm-before-execute).
+- **[CLI-Anything](https://github.com/HKUDS/CLI-Anything)** - agent-native CLI pattern; future `cli-anything-tradewall` for structured `--json`/REPL control of platform workflows.
+- **Supabase** - cloud memory (profiles/watchlists/AI memory/alerts). See `docs/BEST-OF-INTEGRATION.md`.
 
 ## Safety
 - AI output is informational only, **not financial advice**.
