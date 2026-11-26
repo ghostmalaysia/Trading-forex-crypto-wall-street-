@@ -16,6 +16,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Market/news feed panel
 - AI assistant panel (local mock responses, safety disclaimer)
 - Responsive layout for desktop/mobile web
+- Working in-page navigation and keyboard-accessible watchlist selection
+- Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
 
 ## Run locally
 No dependencies required for the static MVP:
@@ -27,6 +29,8 @@ python3 -m http.server 8080
 ```
 
 Or open `web/index.html` directly in a browser.
+
+> **Data status:** the dashboard currently uses generated mock prices, news, and assistant replies. The refresh button advances the mock feed; it does not fetch live market data. Configure Supabase only for optional chat/watchlist memory (see `web/supabase-config.example.js`).
 
 ## Project Vision
 Build a platform/dashboard for web and Android/iOS that includes:

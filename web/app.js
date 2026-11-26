@@ -7,6 +7,7 @@ const MARKET = [
   { symbol: 'US100', market: 'Stocks', price: 18345.2, change: -0.54, history: seed(18345.2, 35) },
   { symbol: 'US30', market: 'Stocks', price: 39120.8, change: 0.21, history: seed(39120.8, 55) },
 ];
+MARKET.forEach(m => { m.referencePrice = m.price / (1 + m.change / 100); });
 
 const NEWS = [
   { title: 'Dollar steadies as traders await inflation data', meta: 'Forex • 12 min ago • Reuters-style mock' },
@@ -47,17 +48,23 @@ function renderStats() {
 
 function renderWatchlist() {
   $('watchlistBody').innerHTML = MARKET.map(m => `
-    <tr class="${m.symbol === state.selected ? 'active' : ''}" data-symbol="${m.symbol}">
+    <tr class="${m.symbol === state.selected ? 'active' : ''}" data-symbol="${m.symbol}" tabindex="0" aria-label="Show ${m.symbol} chart">
       <td>${m.symbol}</td>
       <td>${fmtPrice(m.price)}</td>
       <td class="${m.change >= 0 ? 'up' : 'down'}">${fmtChange(m.change)}</td>
       <td>${m.market}</td>
     </tr>`).join('');
-  document.querySelectorAll('#watchlistBody tr').forEach(tr => tr.addEventListener('click', () => {
+  document.querySelectorAll('#watchlistBody tr').forEach(tr => {
+    const selectSymbol = () => {
     state.selected = tr.dataset.symbol;
     $('symbolSelect').value = state.selected;
     renderAll();
-  }));
+    };
+    tr.addEventListener('click', selectSymbol);
+    tr.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectSymbol(); }
+    });
+  });
 }
 
 function renderNews() {
@@ -185,7 +192,7 @@ function randomWalk() {
     const vol = m.price > 1000 ? 25 : m.price > 100 ? 8 : m.price > 10 ? 0.8 : 0.0009;
     const delta = (Math.random() - 0.5) * vol;
     m.price = +(m.price + delta).toFixed(m.price > 100 ? 2 : 5);
-    m.change = +(m.change + (Math.random() - 0.5) * 0.15).toFixed(2);
+    m.change = +((m.price / m.referencePrice - 1) * 100).toFixed(2);
     m.history.push(m.price);
     if (m.history.length > 60) m.history.shift();
   });
@@ -205,6 +212,9 @@ function bind() {
   $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; renderAll(); await persistProfile(); });
   $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; drawChart(); await persistProfile(); });
   $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); });
+  document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', () => {
+    document.querySelectorAll('.nav a').forEach(item => item.classList.toggle('active', item === link));
+  }));
   window.addEventListener('resize', drawChart);
 }
 

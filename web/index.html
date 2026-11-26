@@ -16,11 +16,11 @@
           <p>Forex • Crypto • Stocks</p>
         </div>
       </div>
-      <nav class="nav">
-        <a class="active" href="#">Dashboard</a>
-        <a href="#" data-view="watchlist">Watchlist</a>
-        <a href="#" data-view="news">News</a>
-        <a href="#" data-view="ai">AI Assistant</a>
+      <nav class="nav" aria-label="Main navigation">
+        <a class="active" href="#dashboard">Dashboard</a>
+        <a href="#watchlist">Watchlist</a>
+        <a href="#news">News</a>
+        <a href="#ai">AI Assistant</a>
       </nav>
       <div class="sidebar-card">
         <h3>AI Status</h3>
@@ -30,10 +30,10 @@
     </aside>
 
     <main class="main">
-      <header class="topbar">
+      <header class="topbar" id="dashboard">
         <div>
           <h2>Market Dashboard</h2>
-          <p id="clock">--</p>
+          <p id="clock" aria-live="off">--</p>
         </div>
         <div class="topbar-actions">
           <select id="symbolSelect" aria-label="Symbol"></select>
@@ -42,7 +42,7 @@
             <option value="4H">4H</option>
             <option value="1D" selected>1D</option>
           </select>
-          <button id="refreshBtn">Refresh</button>
+          <button id="refreshBtn" type="button">Refresh mock data</button>
         </div>
       </header>
 
@@ -58,7 +58,7 @@
           <div class="chart-meta" id="chartMeta"></div>
         </article>
 
-        <article class="panel">
+        <article class="panel" id="watchlist">
           <div class="panel-head">
             <h3>Watchlist</h3>
             <span class="muted">Click to load chart</span>
@@ -71,15 +71,15 @@
           </div>
         </article>
 
-        <article class="panel">
+        <article class="panel" id="news">
           <div class="panel-head">
             <h3>Market News</h3>
-            <span class="muted">Live feed (mock)</span>
+            <span class="muted">Sample headlines (mock)</span>
           </div>
           <div id="newsList" class="news-list"></div>
         </article>
 
-        <article class="panel ai-panel">
+        <article class="panel ai-panel" id="ai">
           <div class="panel-head">
             <h3>AI Assistant</h3>
             <span class="badge warn">Informational only</span>
