@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Intelligence Dashboard</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">TW</div>
+        <div>
+          <h1>TradeWall</h1>
+          <p>Forex • Crypto • Stocks</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="active" href="#">Dashboard</a>
+        <a href="#" data-view="watchlist">Watchlist</a>
+        <a href="#" data-view="news">News</a>
+        <a href="#" data-view="ai">AI Assistant</a>
+      </nav>
+      <div class="sidebar-card">
+        <h3>AI Status</h3>
+        <p><span class="dot"></span>Monitoring markets</p>
+        <small>Mock mode • No trade execution</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2>Market Dashboard</h2>
+          <p id="clock">--</p>
+        </div>
+        <div class="topbar-actions">
+          <select id="symbolSelect" aria-label="Symbol"></select>
+          <select id="timeframeSelect" aria-label="Timeframe">
+            <option value="1H">1H</option>
+            <option value="4H">4H</option>
+            <option value="1D" selected>1D</option>
+          </select>
+          <button id="refreshBtn">Refresh</button>
+        </div>
+      </header>
+
+      <section class="stats" id="stats"></section>
+
+      <section class="grid">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <h3 id="chartTitle">Chart</h3>
+            <span class="badge" id="chartChange">--</span>
+          </div>
+          <canvas id="priceChart" height="320"></canvas>
+          <div class="chart-meta" id="chartMeta"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Watchlist</h3>
+            <span class="muted">Click to load chart</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Symbol</th><th>Price</th><th>24h</th><th>Market</th></tr></thead>
+              <tbody id="watchlistBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Market News</h3>
+            <span class="muted">Live feed (mock)</span>
+          </div>
+          <div id="newsList" class="news-list"></div>
+        </article>
+
+        <article class="panel ai-panel">
+          <div class="panel-head">
+            <h3>AI Assistant</h3>
+            <span class="badge warn">Informational only</span>
+          </div>
+          <div id="chatLog" class="chat-log"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" type="text" placeholder="Ask AI to summarize market, risk, or news..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+          <p class="disclaimer">AI output is not financial advice. Verify before acting.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="./supabase-config.js"></script>
+  <script src="./supabase-client.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
