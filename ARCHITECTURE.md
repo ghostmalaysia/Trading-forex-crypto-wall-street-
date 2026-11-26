@@ -62,6 +62,13 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 - **Target commands**: market quote/watchlist/news/ai-summary/memory sync; all outputs machine-readable.
 - **Safety**: CLI commands are read/analyze by default; any execution action requires explicit confirmation and audit log.
 
+### Trading Execution Layer (MT5/MetaApi, phased)
+- **Observe mode (default)**: read-only market data, AI analysis, alerts.
+- **Paper mode**: simulated broker adapter; same risk/audit pipeline, no real orders.
+- **Live mode (later)**: MetaApi cloud adapter for MT4/MT5, or Windows VPS worker using official `MetaTrader5` Python package.
+- **Execution flow**: `AI TradeProposal -> Deterministic Risk Gate -> Human Approval -> Execution Adapter -> MT5/Broker -> Audit Log`.
+- **Hard limits**: max risk per trade, daily loss/drawdown cap, exposure limits, stale-signal block, spread/slippage guard, kill switch.
+
 ## Core Modules
 
 | Module | Responsibility | MVP |

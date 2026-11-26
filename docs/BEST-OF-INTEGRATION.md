@@ -14,6 +14,7 @@
 | Agent/Automation | **Superalgos-inspired workflow concepts**, but safe: monitor/summarize/alert only; paper-trade/confirm-before-execute later | Powerful automation ideas with safety | Superalgos | Apache-2.0 inspiration |
 | Mobile | **Expo React Native** | One codebase Android/iOS | React ecosystem | Free OSS |
 | Agent-native CLI | **CLI-Anything** | Generate stateful CLI/SKILL.md for agent control of platform workflows | HKUDS/CLI-Anything | Apache-2.0 |
+| Broker/Execution | **MetaApi (cloud) + Paper broker first** | MT4/MT5 connectivity from web/cloud; official MT5 Python only for Windows VPS worker | MetaApi / MQL5 safety patterns | Paid/free tier |
 | Deployment | **Vercel + Supabase + GitHub Actions** | Simple free-first CI/CD | Modern web stack | Free tiers |
 
 ## What We Combine
@@ -63,6 +64,11 @@ Supabase (Cloud Memory)
 - **Adopt**: generate a stateful CLI for TradeWall workflows (watchlist, market/news fetch, AI summary, Supabase memory) with `--json` and `SKILL.md` for agent discovery.
 - **Use case**: lets Claude/Codex/OpenCode agents operate the platform via terminal commands instead of fragile UI automation; good for automation, evals, and scripting.
 - **Integration path**: after Next.js/API stabilizes, run `/cli-anything` on this repo or define a CLI harness wrapping BFF endpoints; publish `cli-anything-tradewall` skill.
+
+## 6) From MT5 / MetaApi (best for broker connectivity)
+- **Adopt**: **MetaApi Cloud** for web/cloud MT4/MT5 connectivity; **official MetaTrader5 Python** only for Windows VPS execution workers.
+- **Safety pattern** (MQL5 reference): `MARKET STATE -> AI PROPOSAL -> RISK GATE -> APPROVAL -> MT5 EXECUTION -> AUDIT LOG`. AI recommends; deterministic code authorizes.
+- **Integration path**: Observe -> Paper broker -> Live with confirm-before-execute and kill switch. See `docs/MT5-AI-INTEGRATION.md`.
 
 ## Immediate Implementation in This Repo
 - [x] Supabase schema (`supabase/schema.sql`)

@@ -66,7 +66,17 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [ ] Strategy study/backtest notebooks (educational)
 - [ ] Recommendation evaluation and feedback loop
 - [ ] Paper trading simulation first
-- [ ] Optional broker integrations - **confirm-before-execute only**
+- [ ] Optional broker integrations (MetaApi/MT5) - **confirm-before-execute only**
 - [ ] Audit logs for all AI-suggested/executed actions
 
 **Outcome:** AI can study, monitor, and assist workflows safely; learns continuously from user-approved outcomes.
+
+## Phase 5 - MT5/MetaApi Live Integration (Guarded)
+- [ ] MetaApi account connection (token vault, server-side only)
+- [ ] Execution adapter interface: `PaperBroker` / `MetaApiBroker`
+- [ ] Deterministic risk gate service (position sizing, daily loss, exposure, stale/spread checks)
+- [ ] Human approval UI/card before any live order
+- [ ] Kill switch, circuit breakers, and reconciliation jobs
+- [ ] Immutable audit log for proposals, approvals, orders, broker responses
+
+**Outcome:** Optional live MT5 trading through dashboard, gated by deterministic risk controls and explicit user approval.
