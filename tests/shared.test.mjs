@@ -30,6 +30,14 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
   await client.backtest({ series: [1, 2, 3] });
   await client.paperOrder({ confirmation: 'EXECUTE PAPER' });
   await client.evaluatePaperOrder({ order: {}, price: 1 });
+  await client.liveStatus();
+  await client.liveProposal({ symbol: 'XAU/USD' });
+  const adminHeaders = { 'x-live-admin-token': 'test-admin-token' };
+  await client.approveLive({ proposalId: 'live-1', confirmation: 'APPROVE LIVE' }, adminHeaders);
+  await client.executeLive({ approval: { id: 'apr-1' }, confirmation: 'EXECUTE LIVE' }, adminHeaders);
+  await client.setLiveKillSwitch({ enabled: true }, adminHeaders);
+  await client.reconcileLive({}, adminHeaders);
+  await client.verifyAudit();
 
   assert.deepEqual(calls.map(call => call.url), [
     'https://trade.example/api/health',
@@ -43,6 +51,13 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
     'https://trade.example/api/backtest',
     'https://trade.example/api/paper/order',
     'https://trade.example/api/paper/evaluate',
+    'https://trade.example/api/live/status',
+    'https://trade.example/api/live/proposal',
+    'https://trade.example/api/live/approve',
+    'https://trade.example/api/live/order',
+    'https://trade.example/api/live/kill-switch',
+    'https://trade.example/api/live/reconcile',
+    'https://trade.example/api/audit/verify',
   ]);
   const aiCall = calls[3];
   assert.equal(aiCall.options.method, 'POST');
@@ -55,6 +70,9 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
   assert.deepEqual(JSON.parse(calls[7].options.body), {
     rules: [{ symbol: 'XAU/USD', condition: '>=', threshold: 1 }],
   });
+  for (const index of [13, 14, 15, 16]) {
+    assert.equal(calls[index].options.headers['x-live-admin-token'], 'test-admin-token');
+  }
 });
 
 test('createApiClient surfaces server error messages', async () => {

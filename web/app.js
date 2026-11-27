@@ -32,6 +32,7 @@ const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
   monitor: null, broker: null, backtest: null, paperOrders: [],
+  liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
 };
@@ -809,6 +810,37 @@ function renderAgent() {
       ${evaluation.outcome ? `<br />${escapeHtml(String(evaluation.outcome))} · pnl ${escapeHtml(String(evaluation.pnl ?? 0))}` : ''}
     </div>`;
   }).join('') : '<div class="paper-order">No paper orders yet.</div>';
+
+  const live = state.liveStatus || {};
+  const circuit = live.circuitBreaker || {};
+  $('liveStatus').innerHTML = `
+    <div>Mode ${escapeHtml(String(live.mode || 'paper'))} · kill switch ${live.killSwitch ? 'ARMED' : 'disarmed'} · circuit ${circuit.tripped ? `OPEN (${escapeHtml(String(circuit.reason || 'tripped'))})` : 'closed'}</div>
+    <div>Adapter ${escapeHtml(String(live.adapter?.name || 'disabled'))} · credentials ${live.vault?.configured ? 'configured' : 'missing'} · live orders ${live.liveOrdersEnabled ? 'READY' : 'blocked'}</div>
+    <div>${escapeHtml(String(live.notice || ''))}</div>`;
+
+  const proposal = state.liveProposal;
+  if (!proposal) {
+    $('liveProposal').textContent = 'Generate and approve a plan first.';
+  } else {
+    const failed = (proposal.assessment?.checks || []).filter(item => !item.pass).map(item => item.name);
+    $('liveProposal').innerHTML = `
+      <div>${escapeHtml(String(proposal.symbol || ''))} ${escapeHtml(String(proposal.side || ''))} · ${escapeHtml(String(proposal.decision || ''))}</div>
+      <div>${proposal.intent?.entry != null ? `entry ${agentPrice(proposal.intent.entry)} · units ${proposal.intent.units} · notional ${proposal.intent.notional}` : ''}</div>
+      <div>${failed.length ? `Failed: ${failed.map(escapeHtml).join(', ')}` : 'All live risk checks passed.'}</div>`;
+  }
+  $('liveApproval').textContent = state.liveApproval
+    ? `Approval ${state.liveApproval.code} issued until ${new Date(state.liveApproval.expiresAt).toLocaleTimeString()}.`
+    : '';
+  $('liveResult').textContent = state.liveResult
+    ? `${state.liveResult.status || 'result'}${state.liveResult.code ? ` · ${state.liveResult.code}` : ''}${state.liveResult.reason ? ` · ${state.liveResult.reason}` : ''}`
+    : '';
+  $('liveEvents').innerHTML = state.liveEvents.length ? state.liveEvents.slice(0, 10).map(event => `
+    <div class="agent-event ${escapeHtml(String(event.status || ''))}">
+      <strong>${escapeHtml(String(event.event || 'live_event'))}</strong> ${escapeHtml(String(event.status || ''))}
+    </div>`).join('') : '';
+  $('auditVerify').textContent = state.auditVerify
+    ? `Audit chain ${state.auditVerify.ok ? 'valid' : 'INVALID'} · ${state.auditVerify.count || 0} entries${state.auditVerify.error ? ` · ${state.auditVerify.error}` : ''}`
+    : '';
 }
 
 async function loadPaperOrders() {
@@ -822,16 +854,29 @@ async function loadPaperOrders() {
   }
 }
 
+async function loadLiveEvents() {
+  if (!window.SupabaseMemory?.enabled || !state.userKey) return;
+  try {
+    const result = await window.SupabaseMemory.loadLiveEvents(20);
+    state.liveEvents = Array.isArray(result.data) ? result.data : [];
+    renderAgent();
+  } catch {
+    setAuthStatus('Live event history could not be loaded. Check the Supabase migration and RLS policies.');
+  }
+}
+
 async function loadAgentState() {
   try {
-    const [monitor, broker] = await Promise.all([
+    const [monitor, broker, live] = await Promise.all([
       agentRequest('/api/monitor'),
       agentRequest('/api/broker/status'),
+      agentRequest('/api/live/status'),
     ]);
     state.monitor = monitor;
     state.broker = broker;
+    state.liveStatus = live;
     renderAgent();
-    await loadPaperOrders();
+    await Promise.all([loadPaperOrders(), loadLiveEvents()]);
   } catch {
     $('monitorStatus').textContent = 'Agent APIs unavailable.';
   }
@@ -900,6 +945,131 @@ async function executeAgentPaperOrder() {
     }
   } catch (error) {
     $('paperOrders').innerHTML = `<div class="agent-event anomaly">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+function liveAdminValue() {
+  return $('liveAdminToken').value.trim();
+}
+
+function liveOptions(payload) {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-live-admin-token': liveAdminValue() },
+    body: JSON.stringify(payload),
+  };
+}
+
+function persistLiveEvent(event) {
+  audit('live_ui_action', 'live', { event: event.event, status: event.status || null, proposalId: event.proposalId || null });
+  if (window.SupabaseMemory?.enabled) window.SupabaseMemory.saveLiveEvent(event).catch(() => {});
+}
+
+async function stageLiveProposal() {
+  const btn = $('stageLiveBtn');
+  btn.disabled = true;
+  try {
+    if (!state.currentPlan || state.planDecision !== 'approved') {
+      throw new Error('Generate and approve a plan first.');
+    }
+    const proposal = await agentRequest('/api/live/proposal', liveOptions({
+      plan: { ...state.currentPlan.plan, symbol: state.selected },
+      risk: state.currentPlan.risk,
+      context: { ...buildAIContext(), quotedAt: new Date().toISOString(), spreadPct: 0.02 },
+      account: { equity: 10000, dailyLossPct: 0, openPositions: 0 },
+    }));
+    state.liveProposal = proposal;
+    state.liveApproval = null;
+    state.liveResult = null;
+    persistLiveEvent({ event: 'live_proposal_staged', proposalId: proposal.id, status: proposal.decision, symbol: proposal.symbol });
+    state.liveStatus = await agentRequest('/api/live/status');
+    renderAgent();
+  } catch (error) {
+    $('liveProposal').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function approveLiveProposal() {
+  const btn = $('approveLiveBtn');
+  btn.disabled = true;
+  try {
+    if (!state.liveProposal) throw new Error('Stage a live proposal first.');
+    const approval = await agentRequest('/api/live/approve', liveOptions({
+      proposalId: state.liveProposal.id,
+      confirmation: $('liveApproveConfirm').value.trim(),
+    }));
+    state.liveApproval = approval;
+    persistLiveEvent({ event: 'live_approval_requested', proposalId: approval.proposalId, approvalId: approval.id, status: approval.status });
+    renderAgent();
+  } catch (error) {
+    $('liveApproval').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function executeLiveOrder() {
+  const btn = $('executeLiveBtn');
+  btn.disabled = true;
+  try {
+    if (!state.liveApproval) throw new Error('Approve the staged proposal first.');
+    const result = await agentRequest('/api/live/order', liveOptions({
+      approval: state.liveApproval,
+      confirmation: $('liveExecuteConfirm').value.trim(),
+    }));
+    state.liveResult = result;
+    state.liveApproval = null;
+    persistLiveEvent({
+      event: 'live_order_attempt',
+      proposalId: state.liveProposal?.id || null,
+      orderId: result.id || result.orderId || null,
+      status: result.status,
+      code: result.code || null,
+    });
+    state.liveStatus = await agentRequest('/api/live/status');
+    renderAgent();
+  } catch (error) {
+    $('liveResult').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function setLiveKillSwitch(enabled) {
+  const btn = enabled ? $('killLiveBtn') : $('disarmLiveBtn');
+  btn.disabled = true;
+  try {
+    const status = await agentRequest('/api/live/kill-switch', liveOptions({
+      enabled,
+      confirmation: enabled ? '' : $('liveDisarmConfirm').value.trim(),
+    }));
+    state.liveStatus = status;
+    if (enabled) state.liveApproval = null;
+    persistLiveEvent({ event: enabled ? 'live_kill_switch_armed' : 'live_kill_switch_disarmed', status: enabled ? 'armed' : 'disarmed' });
+    renderAgent();
+  } catch (error) {
+    $('liveResult').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function reconcileLive() {
+  const btn = $('reconcileLiveBtn');
+  btn.disabled = true;
+  try {
+    const result = await agentRequest('/api/live/reconcile', liveOptions({}));
+    state.liveResult = result;
+    persistLiveEvent({ event: 'live_reconciliation', status: result.status, code: result.code || null });
+    state.liveStatus = await agentRequest('/api/live/status');
+    renderAgent();
+  } catch (error) {
+    $('liveResult').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function verifyAudit() {
+  const btn = $('verifyAuditBtn');
+  btn.disabled = true;
+  try {
+    state.auditVerify = await agentRequest('/api/audit/verify');
+    renderAgent();
+  } catch (error) {
+    $('auditVerify').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
   } finally { btn.disabled = false; }
 }
 
@@ -1037,7 +1207,7 @@ async function finishSignIn() {
   await persistProfile();
   await loadAlerts();
   renderAlerts();
-  await loadPaperOrders();
+  await Promise.all([loadPaperOrders(), loadLiveEvents()]);
   try {
     await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
   } catch { setAuthStatus('Signed in. Watchlist could not be synced; check the Supabase migration and RLS policies.'); }
@@ -1188,6 +1358,13 @@ function bind() {
   $('runMonitorBtn').addEventListener('click', runAgentMonitor);
   $('backtestBtn').addEventListener('click', runAgentBacktest);
   $('executePaperBtn').addEventListener('click', executeAgentPaperOrder);
+  $('stageLiveBtn').addEventListener('click', stageLiveProposal);
+  $('approveLiveBtn').addEventListener('click', approveLiveProposal);
+  $('executeLiveBtn').addEventListener('click', executeLiveOrder);
+  $('killLiveBtn').addEventListener('click', () => setLiveKillSwitch(true));
+  $('disarmLiveBtn').addEventListener('click', () => setLiveKillSwitch(false));
+  $('reconcileLiveBtn').addEventListener('click', reconcileLive);
+  $('verifyAuditBtn').addEventListener('click', verifyAudit);
   $('configEditBtn').addEventListener('click', openConfig);
   $('configForm').addEventListener('submit', event => { event.preventDefault(); applyConfigFromForm(false); });
   $('configTestBtn').addEventListener('click', () => applyConfigFromForm(true));
@@ -1201,6 +1378,10 @@ function bind() {
     state.userKey = null;
     state.alerts = [];
     state.paperOrders = [];
+    state.liveEvents = [];
+    state.liveProposal = null;
+    state.liveApproval = null;
+    state.liveResult = null;
     renderAlerts();
     renderAgent();
     updateAuthUI();

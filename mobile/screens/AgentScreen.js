@@ -10,16 +10,38 @@ export default function AgentScreen({
   paperOrders,
   confirmation,
   setConfirmation,
+  liveStatus,
+  liveProposal,
+  liveApproval,
+  liveResult,
+  liveEvents: liveEventsProp,
+  auditVerify,
+  adminToken,
+  setAdminToken,
+  liveApproveConfirm,
+  setLiveApproveConfirm,
+  liveExecuteConfirm,
+  setLiveExecuteConfirm,
+  liveDisarmConfirm,
+  setLiveDisarmConfirm,
   busy,
   error,
   onRefresh,
   onRunMonitor,
   onBacktest,
   onExecute,
+  onStageLive,
+  onApproveLive,
+  onExecuteLive,
+  onKillLive,
+  onDisarmLive,
+  onReconcileLive,
+  onVerifyAudit,
 }) {
   const rules = Array.isArray(monitor?.rules) ? monitor.rules : [];
   const events = Array.isArray(monitor?.events) ? monitor.events : [];
   const orders = Array.isArray(paperOrders) ? paperOrders : [];
+  const liveEvents = Array.isArray(liveEventsProp) ? liveEventsProp : [];
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -86,6 +108,79 @@ export default function AgentScreen({
           </View>
         )) : <Empty>Generate and approve a plan in AI, then simulate it here.</Empty>}
         <Text style={styles.note}>No broker order is placed. Live adapters are scaffolded but disabled.</Text>
+      </Card>
+
+      <Card>
+        <SectionTitle>GUARDED LIVE</SectionTitle>
+        <Row label="mode" value={liveStatus?.mode || 'paper'} tone={liveStatus?.liveOrdersEnabled ? 'good' : 'bad'} />
+        <Row label="kill switch" value={liveStatus?.killSwitch ? 'ARMED' : 'disarmed'} tone={liveStatus?.killSwitch ? 'good' : 'bad'} />
+        <Row label="circuit" value={liveStatus?.circuitBreaker?.tripped ? 'OPEN' : 'closed'} tone={liveStatus?.circuitBreaker?.tripped ? 'bad' : 'good'} />
+        <Row label="adapter" value={liveStatus?.adapter?.name || 'disabled'} />
+        <Row label="credentials" value={liveStatus?.vault?.configured ? 'configured' : 'missing'} />
+        <Text style={styles.note}>{liveStatus?.notice || 'Live guard status is loading.'}</Text>
+        <TextInput
+          value={adminToken}
+          onChangeText={setAdminToken}
+          style={styles.input}
+          placeholder="Live admin token"
+          placeholderTextColor="#64748b"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <View style={styles.actions}>
+          <Button title="STAGE PROPOSAL" color="#22d3ee" disabled={busy} onPress={onStageLive} />
+          <Button title="KILL LIVE" color="#f87171" disabled={busy} onPress={onKillLive} />
+          <Button title="RECONCILE" color="#64748b" disabled={busy} onPress={onReconcileLive} />
+          <Button title="VERIFY AUDIT" color="#64748b" disabled={busy} onPress={onVerifyAudit} />
+        </View>
+        {liveProposal ? (
+          <View style={styles.order}>
+            <Text style={styles.eventTitle}>{liveProposal.symbol || 'ORDER'} · {liveProposal.decision}</Text>
+            <Text style={styles.eventText}>entry {fmt(liveProposal.intent?.entry)} · units {liveProposal.intent?.units ?? '—'}</Text>
+            <Text style={styles.eventText}>{(liveProposal.assessment?.checks || []).filter(item => !item.pass).map(item => item.name).join(', ') || 'All live risk checks passed.'}</Text>
+          </View>
+        ) : <Empty>Generate and approve a plan first.</Empty>}
+        <TextInput
+          value={liveApproveConfirm}
+          onChangeText={setLiveApproveConfirm}
+          style={styles.input}
+          placeholder="Type APPROVE LIVE"
+          placeholderTextColor="#64748b"
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        <Button title="APPROVE PROPOSAL" color="#a3e635" disabled={busy} onPress={onApproveLive} />
+        {liveApproval ? <Text style={styles.eventText}>Approval {liveApproval.code} issued.</Text> : null}
+        <TextInput
+          value={liveExecuteConfirm}
+          onChangeText={setLiveExecuteConfirm}
+          style={styles.input}
+          placeholder="Type EXECUTE LIVE"
+          placeholderTextColor="#64748b"
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        <Button title="SEND GUARDED ORDER" color="#f59e0b" disabled={busy} onPress={onExecuteLive} />
+        <TextInput
+          value={liveDisarmConfirm}
+          onChangeText={setLiveDisarmConfirm}
+          style={styles.input}
+          placeholder="Type DISABLE KILL SWITCH"
+          placeholderTextColor="#64748b"
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        <Button title="DISARM KILL SWITCH" color="#f87171" disabled={busy} onPress={onDisarmLive} />
+        {liveResult ? <Text style={styles.eventText}>{liveResult.status}{liveResult.code ? ` · ${liveResult.code}` : ''}</Text> : null}
+        {auditVerify ? <Text style={styles.note}>Audit chain {auditVerify.ok ? 'valid' : 'INVALID'} · {auditVerify.count || 0} entries</Text> : null}
+        {liveEvents.length ? liveEvents.slice(0, 5).map((item, index) => (
+          <View key={`${item.created_at || index}`} style={styles.event}>
+            <Text style={styles.eventTitle}>{item.event || 'live_event'}</Text>
+            <Text style={styles.eventText}>{item.status || ''}</Text>
+          </View>
+        )) : null}
+        <Text style={styles.note}>Live orders require server credentials, a wired adapter, admin token, approval secret, explicit approval, and a disarmed kill switch.</Text>
       </Card>
     </ScrollView>
   );

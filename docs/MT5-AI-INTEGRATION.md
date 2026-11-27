@@ -80,6 +80,13 @@
 3. **Live (guarded)**: MetaApi/bridge integration; user approval per order; strict risk gate + kill switch.
 4. **Agent workflows**: scheduled monitoring, alerts, post-trade review; continuous learning from approved outcomes.
 
+## Current implementation status (Phase 5)
+- Guarded-live endpoints are `/api/live/status`, `/api/live/proposal`, `/api/live/approve`, `/api/live/order`, `/api/live/kill-switch`, `/api/live/reconcile`, and `/api/audit/verify`.
+- Credentials are read only from server environment variables; browser/mobile clients receive status and fingerprints, never tokens.
+- The default `LIVE_ADAPTER=disabled` fails closed. A real adapter goes in `ai/adapters/<name>.mjs` and receives a credential provider, not raw secrets.
+- Every live order requires `APPROVE LIVE`, `EXECUTE LIVE`, a fresh deterministic risk pass, an available adapter, an armed-but-disarmed kill switch, and a closed circuit breaker.
+- Audit records are SHA-256 hash-chained in `data/audit.jsonl`; `/api/audit/verify` validates the chain. Live event metadata can also be stored per user in Supabase `live_events`.
+
 ## References
 - [MetaApi Cloud](https://metaapi.cloud/) / [Docs](https://metaapi.cloud/docs/client/) / [Python SDK](https://github.com/metaapi/metaapi-python-sdk)
 - [MetaTrader5 Python package](https://pypi.org/project/MetaTrader5/) (Windows/local terminal)

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.mjs';
@@ -12,6 +12,13 @@ import { detectAnomalies, evaluateRules, normalizeRule } from './ai/monitor.mjs'
 import { backtestSmaCross } from './ai/backtest.mjs';
 import { evaluatePaperOrder, simulateFill } from './ai/execution.mjs';
 import { brokerStatus, brokers } from './ai/broker.mjs';
+import { auditHash, GENESIS_HASH, stripChainFields, verifyAuditChain } from './ai/audit-chain.mjs';
+import { evaluateLiveRisk, livePolicy } from './ai/live-risk.mjs';
+import { tokenVaultStatus } from './ai/token-vault.mjs';
+import { createApproval, safeEqual, verifyApproval } from './ai/live-approval.mjs';
+import { LiveCircuitBreaker } from './ai/circuit-breaker.mjs';
+import { loadLiveAdapter, placeLiveOrder, reconcileLiveOrders } from './ai/live-broker.mjs';
+import { summarizeReconciliation } from './ai/reconciliation.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
@@ -26,6 +33,21 @@ const marketTargets = {
 const marketCache = { payload: null, fetchedAt: 0 };
 const monitorState = { rules: [], events: [], lastRunAt: null, running: false };
 const auditFile = process.env.AUDIT_LOG_FILE || resolve(root, 'data', 'audit.jsonl');
+const livePolicyConfig = livePolicy();
+const liveState = {
+  killSwitch: process.env.LIVE_KILL_SWITCH !== 'false',
+  circuit: new LiveCircuitBreaker({
+    maxFailures: livePolicyConfig.circuitFailures,
+    cooldownMs: livePolicyConfig.circuitCooldownSeconds * 1000,
+  }),
+  proposals: new Map(),
+  approvals: new Map(),
+  liveOrders: [],
+  lastReconciliationAt: null,
+  lastReconciliation: null,
+};
+let auditChain = null;
+let auditQueue = Promise.resolve();
 
 try {
   const seededRules = JSON.parse(process.env.MONITOR_RULES || '[]');
@@ -107,12 +129,40 @@ function rpc(method, params = {}) {
   });
 }
 
-async function appendAudit(event, detail = {}) {
+async function auditChainState() {
+  if (auditChain) return auditChain;
   try {
-    await mkdir(dirname(auditFile), { recursive: true });
-    const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...detail })}\n`;
-    await appendFile(auditFile, line);
-  } catch {}
+    const rows = String(await readFile(auditFile, 'utf8')).split('\n').filter(Boolean);
+    const last = rows.length ? JSON.parse(rows[rows.length - 1]) : null;
+    auditChain = {
+      sequence: Number(last?.seq) || 0,
+      hash: String(last?.hash || GENESIS_HASH),
+    };
+  } catch {
+    auditChain = { sequence: 0, hash: GENESIS_HASH };
+  }
+  return auditChain;
+}
+
+function writeAudit(event, detail) {
+  const task = auditQueue.then(async () => {
+    try {
+      const chain = await auditChainState();
+      const seq = chain.sequence + 1;
+      const entry = { ...stripChainFields(detail), timestamp: new Date().toISOString(), event };
+      const hash = auditHash(chain.hash, seq, entry);
+      await mkdir(dirname(auditFile), { recursive: true });
+      await appendFile(auditFile, `${JSON.stringify({ ...entry, seq, prev: chain.hash, hash })}\n`);
+      chain.sequence = seq;
+      chain.hash = hash;
+    } catch {}
+  });
+  auditQueue = task.catch(() => {});
+  return task;
+}
+
+async function appendAudit(event, detail = {}) {
+  await writeAudit(event, detail);
 }
 
 function clientHash(req) {
@@ -262,6 +312,8 @@ function sanitizeContext(value) {
     history: Array.isArray(value.history) ? value.history.slice(-8).filter(item => item && ['user', 'assistant', 'ai'].includes(item.role)).map(item => ({ role: item.role === 'ai' ? 'assistant' : item.role, content: text(item.content, 1200) })) : [],
     preferences: value.preferences && typeof value.preferences === 'object' ? value.preferences : {},
     risk: value.risk && typeof value.risk === 'object' ? value.risk : {},
+    quotedAt: value.quotedAt == null ? null : String(value.quotedAt).slice(0, 40),
+    spreadPct: number(value.spreadPct),
   };
 }
 
@@ -271,6 +323,118 @@ function parseJsonPlan(text) {
   const end = text.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
   try { return JSON.parse(text.slice(start, end + 1)); } catch { return null; }
+}
+
+function liveRiskConfig() {
+  return {
+    ...livePolicyConfig,
+    killSwitch: liveState.killSwitch,
+    credentialsConfigured: tokenVaultStatus().configured,
+    circuitTripped: liveState.circuit.snapshot().tripped,
+  };
+}
+
+function liveAccount(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    equity: Number(source.equity),
+    dailyLossPct: Number(source.dailyLossPct) || 0,
+    openPositions: Number(source.openPositions) || 0,
+  };
+}
+
+function liveContext(value) {
+  const context = sanitizeContext(value);
+  context.quotedAt = context.quotedAt || (marketCache.fetchedAt ? new Date(marketCache.fetchedAt).toISOString() : new Date().toISOString());
+  if (context.spreadPct == null) context.spreadPct = marketCache.payload?.provider === 'live' ? 0.05 : 0.01;
+  return context;
+}
+
+function pruneLiveStores() {
+  const now = Date.now();
+  for (const [id, proposal] of liveState.proposals) {
+    if (!proposal.expiresAt || Date.parse(proposal.expiresAt) <= now) liveState.proposals.delete(id);
+  }
+  for (const [id, approval] of liveState.approvals) {
+    if (!approval.expiresAt || Date.parse(approval.expiresAt) <= now) liveState.approvals.delete(id);
+  }
+}
+
+function publicProposal(proposal) {
+  if (!proposal) return null;
+  const { _input, ...publicFields } = proposal;
+  return publicFields;
+}
+
+function liveAdmin(req, payload = {}) {
+  if (!livePolicyConfig.adminTokenConfigured) {
+    return { ok: false, status: 503, error: 'LIVE_ADMIN_TOKEN is not configured on the server' };
+  }
+  const fromHeader = String(req.headers['x-live-admin-token'] || '');
+  const supplied = fromHeader || String(payload.adminToken || '');
+  if (!safeEqual(supplied, String(process.env.LIVE_ADMIN_TOKEN || ''))) {
+    return { ok: false, status: 401, error: 'Live admin token is invalid' };
+  }
+  return { ok: true, source: fromHeader ? 'header' : 'body' };
+}
+
+async function liveStatus() {
+  const vault = tokenVaultStatus();
+  const adapter = await loadLiveAdapter();
+  const circuit = liveState.circuit.snapshot();
+  const ready = livePolicyConfig.liveTradingEnabled
+    && !liveState.killSwitch
+    && vault.configured
+    && adapter.available
+    && !circuit.tripped
+    && livePolicyConfig.approvalSecretConfigured
+    && livePolicyConfig.adminTokenConfigured;
+  return {
+    mode: ready ? 'guarded-live' : 'paper',
+    liveOrdersEnabled: ready,
+    killSwitch: liveState.killSwitch,
+    circuitBreaker: circuit,
+    vault,
+    adapter: { name: adapter.name, available: !!adapter.available, error: adapter.error || null },
+    policy: livePolicyConfig,
+    proposalCount: liveState.proposals.size,
+    approvalCount: liveState.approvals.size,
+    lastReconciliationAt: liveState.lastReconciliationAt,
+    lastReconciliation: liveState.lastReconciliation,
+    notice: ready
+      ? 'Guarded live adapter is ready. Every order still requires explicit approval and a fresh risk check.'
+      : 'Live orders are blocked. Configure server credentials, an adapter, admin token, approval secret, and disarm the kill switch.',
+  };
+}
+
+async function runReconciliation() {
+  try {
+    const result = await reconcileLiveOrders({ orders: liveState.liveOrders });
+    const remoteOrders = Array.isArray(result.orders) ? result.orders : [];
+    const summary = summarizeReconciliation(liveState.liveOrders, remoteOrders);
+    const snapshot = {
+      status: result.status,
+      code: result.code || null,
+      provider: result.provider,
+      summary,
+      at: new Date().toISOString(),
+    };
+    liveState.lastReconciliationAt = snapshot.at;
+    liveState.lastReconciliation = snapshot;
+    await appendAudit('live_reconciliation', { status: snapshot.status, code: snapshot.code, matched: summary.matched });
+    return snapshot;
+  } catch (error) {
+    const snapshot = {
+      status: 'error',
+      code: 'LIVE_RECONCILIATION_ERROR',
+      reason: String(error.message).slice(0, 160),
+      at: new Date().toISOString(),
+    };
+    liveState.lastReconciliationAt = snapshot.at;
+    liveState.lastReconciliation = snapshot;
+    await appendAudit('live_reconciliation', { status: snapshot.status, code: snapshot.code });
+    return snapshot;
+  }
 }
 
 async function handle(req, res) {
@@ -328,6 +492,182 @@ async function handle(req, res) {
   if (url.pathname === '/api/broker/status') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     return sendJson(res, 200, brokerStatus());
+  }
+  if (url.pathname === '/api/live/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    pruneLiveStores();
+    return sendJson(res, 200, await liveStatus());
+  }
+  if (url.pathname === '/api/live/kill-switch') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const admin = liveAdmin(req, payload);
+    if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
+    const enabled = payload.enabled === true ? true : payload.enabled === false ? false : null;
+    if (enabled == null) return sendJson(res, 400, { error: 'Provide enabled as true or false' });
+    if (!enabled && payload.confirmation !== 'DISABLE KILL SWITCH') {
+      return sendJson(res, 400, { error: 'Type DISABLE KILL SWITCH to disarm live trading' });
+    }
+    liveState.killSwitch = enabled;
+    if (enabled) liveState.approvals.clear();
+    await appendAudit('live_kill_switch_updated', { enabled, adminSource: admin.source });
+    return sendJson(res, 200, await liveStatus());
+  }
+  if (url.pathname === '/api/live/proposal') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    pruneLiveStores();
+    const context = liveContext(payload.context);
+    const account = liveAccount(payload.account);
+    const assessment = evaluateLiveRisk({
+      plan: payload.plan,
+      risk: payload.risk,
+      context,
+      account,
+      config: liveRiskConfig(),
+    });
+    const id = `live-${randomUUID()}`;
+    const hash = createHash('sha256').update(JSON.stringify({
+      id,
+      plan: payload.plan,
+      risk: payload.risk,
+      context,
+      account,
+      assessment,
+    })).digest('hex');
+    const proposal = {
+      id,
+      hash,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + livePolicyConfig.approvalTtlSeconds * 1000).toISOString(),
+      decision: assessment.decision,
+      symbol: assessment.symbol,
+      side: assessment.side,
+      intent: {
+        symbol: assessment.symbol,
+        side: assessment.side,
+        entry: Number(payload.plan?.entry) || null,
+        stopLoss: Number(payload.plan?.stopLoss) || null,
+        takeProfit: Number(payload.plan?.takeProfit) || null,
+        units: assessment.units,
+        notional: assessment.notional,
+        riskPct: Number(payload.plan?.riskPct) || 0,
+      },
+      assessment,
+      requiresApproval: assessment.eligible,
+      liveOnly: true,
+      _input: { plan: payload.plan, risk: payload.risk, context, account },
+    };
+    if (assessment.eligible) liveState.proposals.set(id, proposal);
+    await appendAudit('live_proposal_created', { proposalId: id, symbol: proposal.symbol, decision: proposal.decision });
+    return sendJson(res, 200, publicProposal(proposal));
+  }
+  if (url.pathname === '/api/live/approve') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const admin = liveAdmin(req, payload);
+    if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
+    if (!livePolicyConfig.approvalSecretConfigured) {
+      return sendJson(res, 503, { error: 'LIVE_APPROVAL_SECRET is not configured on the server' });
+    }
+    if (payload.confirmation !== 'APPROVE LIVE') {
+      return sendJson(res, 400, { error: 'Type APPROVE LIVE to approve this proposal' });
+    }
+    pruneLiveStores();
+    const proposal = liveState.proposals.get(String(payload.proposalId || ''));
+    if (!proposal) return sendJson(res, 400, { error: 'Proposal is unknown or expired' });
+    const assessment = evaluateLiveRisk({ ...proposal._input, config: liveRiskConfig() });
+    if (!assessment.eligible) {
+      proposal.decision = 'blocked';
+      proposal.assessment = assessment;
+      await appendAudit('live_approval_blocked', { proposalId: proposal.id, checks: assessment.checks.filter(item => !item.pass).map(item => item.name) });
+      return sendJson(res, 400, { error: 'Proposal no longer passes the live risk gate', assessment });
+    }
+    const approval = createApproval(proposal, String(process.env.LIVE_APPROVAL_SECRET), livePolicyConfig.approvalTtlSeconds);
+    liveState.approvals.set(approval.id, approval);
+    await appendAudit('live_approval_issued', { proposalId: proposal.id, approvalId: approval.id, code: approval.code, adminSource: admin.source });
+    return sendJson(res, 200, approval);
+  }
+  if (url.pathname === '/api/live/order') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const admin = liveAdmin(req, payload);
+    if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
+    if (!livePolicyConfig.approvalSecretConfigured) {
+      return sendJson(res, 503, { error: 'LIVE_APPROVAL_SECRET is not configured on the server' });
+    }
+    if (payload.confirmation !== 'EXECUTE LIVE') {
+      return sendJson(res, 400, { error: 'Type EXECUTE LIVE to send the approved proposal' });
+    }
+    pruneLiveStores();
+    const approval = payload.approval && typeof payload.approval === 'object' ? payload.approval : null;
+    const proposal = approval?.proposalId ? liveState.proposals.get(String(approval.proposalId)) : null;
+    const verified = verifyApproval(approval, proposal, String(process.env.LIVE_APPROVAL_SECRET));
+    if (!verified.ok || !liveState.approvals.has(verified.approvalId || approval?.id)) {
+      liveState.circuit.recordFailure(verified.reason || 'APPROVAL_NOT_FOUND');
+      await appendAudit('live_order_rejected', { reason: verified.reason || 'APPROVAL_NOT_FOUND' });
+      return sendJson(res, 400, { error: verified.reason || 'Approval is unknown or expired' });
+    }
+    liveState.approvals.delete(verified.approvalId);
+    try {
+      liveState.circuit.assertClosed();
+    } catch (error) {
+      await appendAudit('live_order_rejected', { reason: 'CIRCUIT_OPEN' });
+      return sendJson(res, 400, { error: error.message });
+    }
+    const assessment = evaluateLiveRisk({ ...proposal._input, config: liveRiskConfig() });
+    if (!assessment.eligible) {
+      liveState.circuit.recordFailure('RISK_GATE_CHANGED');
+      await appendAudit('live_order_rejected', { reason: 'RISK_GATE_CHANGED' });
+      return sendJson(res, 400, { error: 'Live risk gate changed before execution', assessment });
+    }
+    try {
+      const result = await placeLiveOrder({
+        proposal: publicProposal(proposal),
+        approval: { id: approval.id, code: approval.code, expiresAt: approval.expiresAt },
+        assessment,
+      });
+      if (result.status === 'blocked') liveState.circuit.recordFailure(result.code || 'LIVE_ORDER_BLOCKED');
+      else {
+        liveState.circuit.recordSuccess();
+        if (result.id || result.orderId) liveState.liveOrders.push(result);
+      }
+      await appendAudit('live_order_result', {
+        proposalId: proposal.id,
+        approvalId: approval.id,
+        status: result.status,
+        code: result.code || null,
+        orderRef: result.id || result.orderId || null,
+      });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      liveState.circuit.recordFailure(error.message);
+      await appendAudit('live_order_error', { proposalId: proposal.id, reason: String(error.message).slice(0, 160) });
+      return sendJson(res, 400, { error: String(error.message).slice(0, 160) });
+    }
+  }
+  if (url.pathname === '/api/live/reconcile') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const admin = liveAdmin(req, payload);
+    if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
+    return sendJson(res, 200, await runReconciliation());
+  }
+  if (url.pathname === '/api/audit/verify') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    await auditQueue;
+    const text = await readFile(auditFile, 'utf8').catch(() => '');
+    return sendJson(res, 200, verifyAuditChain(text));
   }
   if (url.pathname === '/api/paper/order') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -445,6 +785,13 @@ if (process.env.MONITOR_DISABLED !== 'true') {
     runMonitorCycle().catch(() => {});
   }, monitorSnapshot().intervalSeconds * 1000);
   monitorInterval.unref();
+}
+
+if (livePolicyConfig.liveTradingEnabled && process.env.LIVE_RECONCILE_INTERVAL_SECONDS) {
+  const reconciliationInterval = setInterval(() => {
+    runReconciliation().catch(() => {});
+  }, livePolicyConfig.reconcileIntervalSeconds * 1000);
+  reconciliationInterval.unref();
 }
 
 startLongbridge();

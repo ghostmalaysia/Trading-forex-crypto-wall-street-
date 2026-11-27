@@ -7,9 +7,9 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `ROADMAP.md` - phased delivery plan
 - `web/` - runnable static MVP dashboard (no build required)
 - `mobile/` - Expo app scaffold consuming the same Node APIs
-- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs)
-- `ai/` - AI prompt/provider/plan modules plus safe agent modules (monitor, backtest, execution, broker)
-- `tests/` - automated AI, HTTP, agent, shared client, and mobile cloud client tests
+- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs, live events)
+- `ai/` - AI prompt/provider/plan modules plus safe agent and guarded-live modules (monitor, backtest, execution, broker, audit chain, token vault, risk gate, approvals, circuit breaker, reconciliation)
+- `tests/` - automated AI, HTTP, agent, live guard, shared client, and mobile cloud client tests
 - `shared/` - API client and curated feed data shared by server and mobile
 - `docs/` - product notes, references, and integration plan
 - `Dockerfile` / `docker-compose.yml` - container deployment config
@@ -28,7 +28,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Feedback buttons feed per-user AI learning in Supabase
 - Append-only audit logs for AI requests, plan decisions, feedback, and alerts
 - Agent Lab: background monitor rules/anomaly events, educational SMA-cross backtest, paper order simulation, evaluation feedback, and broker status
-- Server-side monitor interval with audit events for monitor, backtest, paper order, and evaluation actions
+- Guarded-live controls: server-side token vault, deterministic risk gate, HMAC approval, kill switch, circuit breaker, reconciliation, and hash-chained audit verification
+- Server-side monitor interval with audit events for monitor, backtest, paper order, evaluation, and guarded-live actions
 - Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
 - Expo mobile app with shared API client, six core screens, Supabase sync, and local alert notifications
@@ -69,15 +70,23 @@ Set `GROQ_API_KEY` in the server environment to enable a live Groq model:
 GROQ_API_KEY=your_key GROQ_MODEL=openai/gpt-oss-20b node server.mjs
 ```
 
-Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql), [`supabase/migrations/202611270002_audit_logs.sql`](supabase/migrations/202611270002_audit_logs.sql), and [`supabase/migrations/202611280001_agent_workflows.sql`](supabase/migrations/202611280001_agent_workflows.sql) for existing projects, or use `supabase/schema.sql` for fresh ones. The Node server also appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`).
+Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql), [`supabase/migrations/202611270002_audit_logs.sql`](supabase/migrations/202611270002_audit_logs.sql), and [`supabase/migrations/202611280001_agent_workflows.sql`](supabase/migrations/202611280001_agent_workflows.sql), plus [`supabase/migrations/202611290001_guarded_live.sql`](supabase/migrations/202611290001_guarded_live.sql) for guarded-live events, for existing projects, or use `supabase/schema.sql` for fresh ones. The Node server also appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`).
 
 ## Agent workflows (paper-only)
 
 The Agent Lab adds `GET /api/monitor`, `POST /api/monitor/rules`, `POST /api/monitor/run`, `POST /api/backtest`, `GET /api/broker/status`, `POST /api/paper/order`, and `POST /api/paper/evaluate`. Rule evaluation and anomaly detection run on a server interval and are limited to XAU/USD and DXY. Backtests are educational simulations, not predictive research.
 
-Paper execution only accepts an approved plan and the exact confirmation string `EXECUTE PAPER`. `POST /api/paper/order` simulates slippage and returns a `paperOnly` order; `POST /api/paper/evaluate` reports outcome and PnL. Signed-in users can persist orders in `paper_orders` and feedback in `ai_evaluations`. Broker adapters are scaffolded for MetaApi/MT5 later, but `liveOrdersEnabled` is always `false`.
+Paper execution only accepts an approved plan and the exact confirmation string `EXECUTE PAPER`. `POST /api/paper/order` simulates slippage and returns a `paperOnly` order; `POST /api/paper/evaluate` reports outcome and PnL. Signed-in users can persist orders in `paper_orders` and feedback in `ai_evaluations`. Paper mode remains the default; the guarded-live adapter is separate and blocks orders until explicitly configured.
 
-Configure with `MONITOR_RULES` (JSON array), `MONITOR_INTERVAL_SECONDS` (minimum 30), `MONITOR_ZSCORE`, `METAAPI_TOKEN`, `METAAPI_ACCOUNT_ID`, and `ENABLE_LIVE_TRADING`. Live order requests are rejected; `GROQ_API_KEY` remains server-side only.
+Configure paper monitoring with `MONITOR_RULES` (JSON array), `MONITOR_INTERVAL_SECONDS` (minimum 30), and `MONITOR_ZSCORE`. `GROQ_API_KEY` remains server-side only.
+
+## Guarded live workflow
+
+Live trading is opt-in and fail-closed. The kill switch is armed unless `LIVE_KILL_SWITCH=false`. Readiness requires `ENABLE_LIVE_TRADING=true`, `METAAPI_TOKEN`, `METAAPI_ACCOUNT_ID`, `LIVE_ADMIN_TOKEN`, `LIVE_APPROVAL_SECRET`, and an available adapter. Tokens never leave the server; `/api/live/status` reports only configuration status and adapter metadata.
+
+The flow is `POST /api/live/proposal` -> `POST /api/live/approve` -> `POST /api/live/order`. The exact confirmations are `APPROVE LIVE` and `EXECUTE LIVE`; disarming needs `DISABLE KILL SWITCH`. Admin endpoints accept `x-live-admin-token` or `adminToken` in the JSON body. `POST /api/live/reconcile` summarizes broker/local order drift, and `GET /api/audit/verify` verifies the SHA-256 hash chain in `data/audit.jsonl`.
+
+`LIVE_ADAPTER=disabled` is the default and returns `LIVE_PROVIDER_NOT_WIRED`. To wire a real broker, add `ai/adapters/<name>.mjs` with `placeOrder()` and optional `reconcile()`; it receives a credential provider rather than raw secrets. Suggested live settings: `LIVE_MAX_RISK_PCT`, `LIVE_MIN_REWARD_RISK`, `LIVE_MAX_DAILY_LOSS_PCT`, `LIVE_MAX_OPEN_POSITIONS`, `LIVE_MAX_STALE_SECONDS`, `LIVE_MAX_SPREAD_PCT`, `LIVE_MAX_NOTIONAL`, `LIVE_MIN_EQUITY`, `LIVE_APPROVAL_TTL_SECONDS`, `LIVE_CIRCUIT_FAILURES`, `LIVE_CIRCUIT_COOLDOWN_SECONDS`, and `LIVE_RECONCILE_INTERVAL_SECONDS`. Signed-in users persist live event metadata in `live_events` with per-user RLS; approval tokens are not stored.
 
 ## Testing
 
@@ -85,7 +94,7 @@ Configure with `MONITOR_RULES` (JSON array), `MONITOR_INTERVAL_SECONDS` (minimum
 npm test
 ```
 
-Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, health/market/news/agent/AI endpoints, static serving, path traversal rejection, shared API client, and audit-log creation. The HTTP test starts a local stub market feed, so it does not require internet access.
+Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, guarded-live risk/approval/circuit/reconciliation, health/market/news/agent/AI/live endpoints, static serving, path traversal rejection, shared API client, and hash-chained audit logs. The HTTP test starts a local stub market feed, so it does not require internet access.
 
 ## Deployment
 
@@ -99,7 +108,7 @@ The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume fo
 
 ## Mobile app
 
-`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, and `/api/broker/status`. Supabase Auth, preferences, watchlist, chat, paper orders, and evaluations sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
+`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, `/api/broker/status`, and the guarded-live/audit endpoints. Supabase Auth, preferences, watchlist, chat, paper orders, evaluations, and live event metadata sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
 
 ```bash
 cd mobile
@@ -108,7 +117,7 @@ cp .env.example .env
 npm start
 ```
 
-Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The Settings screen can override the API base and Supabase publishable key without a rebuild. The mobile app is paper-only and does not place orders.
+Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The Settings screen can override the API base and Supabase publishable key without a rebuild. The mobile app defaults to paper-only; guarded-live controls remain blocked unless the server is configured and the explicit admin/approval flow is completed.
 
 ## Market data, alerts, and calendar
 
@@ -144,9 +153,10 @@ Build a platform/dashboard for web and Android/iOS that includes:
 
 ## Safety
 - AI output is informational only, **not financial advice**.
-- No automated trading/execution in MVP; AI plans are paper-only and require explicit human approval.
-- Agent Lab simulations require `EXECUTE PAPER`; broker adapters never place live orders in this build.
-- Any future automation must be permissioned and confirm-before-execute.
+- Default mode is paper-only; AI plans require explicit human approval.
+- Agent Lab simulations require `EXECUTE PAPER`; the default live adapter blocks all orders.
+- Guarded live is fail-closed: kill switch, risk gate, HMAC approval, circuit breaker, reconciliation, and audit verification must all pass.
+- Any live adapter must be permissioned and confirm-before-execute; secrets stay server-side.
 
 ## Next Steps
-See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–4 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, and the mobile app; live broker automation and remote push tokens remain out of scope for the MVP.
+See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–5 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, the mobile app, and guarded live scaffolding; a real broker adapter, licensed spot feeds, and remote push tokens remain integration work.

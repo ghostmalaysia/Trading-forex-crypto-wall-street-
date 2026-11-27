@@ -65,9 +65,9 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 ### Trading Execution Layer (MT5/MetaApi, phased)
 - **Observe mode (default)**: read-only market data, AI analysis, alerts.
 - **Paper mode**: simulated broker adapter; same risk/audit pipeline, no real orders.
-- **Live mode (later)**: MetaApi cloud adapter for MT4/MT5, or Windows VPS worker using official `MetaTrader5` Python package.
-- **Execution flow**: `AI TradeProposal -> Deterministic Risk Gate -> Human Approval -> Execution Adapter -> MT5/Broker -> Audit Log`.
-- **Hard limits**: max risk per trade, daily loss/drawdown cap, exposure limits, stale-signal block, spread/slippage guard, kill switch.
+- **Guarded live mode (scaffolded, off by default)**: MetaApi cloud adapter for MT4/MT5, or Windows VPS worker using official `MetaTrader5` Python package. The default adapter blocks all live orders until a named adapter is wired.
+- **Execution flow**: `AI TradeProposal -> Deterministic Risk Gate -> HMAC Human Approval -> Kill Switch/Circuit Breaker -> Execution Adapter -> MT5/Broker -> Hash-chained Audit Log`.
+- **Hard limits**: max risk per trade, daily loss/drawdown cap, exposure limits, stale-signal block, spread/slippage guard, kill switch, approval TTL, reconciliation drift checks.
 
 ## Core Modules
 
@@ -80,7 +80,8 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 | Watchlist/Alerts | Track assets, thresholds | Basic watchlist |
 | AI Assistant | Chat, summaries, monitoring | Rule-based fallback + Groq provider |
 | Agent Workflows | Monitor rules, anomaly detection, backtests, paper execution | Safe paper-only modules and audit events |
-| Mobile Shell | Shared navigation and screens | Expo app with dashboard, news, AI, and agent screens |
+| Guarded Live | Token vault, deterministic risk gate, approvals, breaker, reconciliation | Fail-closed scaffold; default adapter blocks live orders |
+| Mobile Shell | Shared navigation and screens | Expo app with dashboard, news, AI, guarded-live, and agent screens |
 
 ## Data Flow
 1. **Ingestion** pulls market/news data from free providers.
@@ -90,6 +91,7 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 5. **AI** consumes normalized data + user context to generate insights/alerts.
 6. **Feedback loop** records user actions and AI outcome ratings.
 7. **Agent workflows** evaluate monitor rules/anomalies on a server interval, run educational backtests, simulate fills with explicit confirmation, and audit every action.
+8. **Guarded live** promotes an approved proposal through a fresh risk check, HMAC approval, kill switch/circuit breaker, named execution adapter, reconciliation, and hash-chained audit verification.
 
 ## Security & Compliance Notes
 - No secrets in repo; use `.env.local`.

@@ -54,20 +54,26 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - `POST /api/monitor/run` evaluates thresholds and price anomalies; a server interval runs the same cycle unless `MONITOR_DISABLED=true` is set.
 - `POST /api/backtest` returns an educational SMA-cross simulation using the selected chart series; it is not predictive.
 - `POST /api/paper/order` requires an approved plan plus the exact confirmation `EXECUTE PAPER`; `POST /api/paper/evaluate` reports outcome and PnL.
-- `GET /api/broker/status` reports `liveOrdersEnabled: false`. MetaApi/MT5 adapters are scaffolded only; no live order is placed.
+- `GET /api/broker/status` reports paper broker status; the guarded-live adapter is separate and blocked until configured.
 - Web Agent Lab and the mobile Agent screen expose monitor, backtest, paper execution, and broker status. Signed-in users persist paper orders and evaluations through per-user RLS policies.
 
-## 10. Recommended next implementation
+## 10. Guarded live workflow (done)
+- `GET /api/live/status` reports mode, kill switch, circuit breaker, credential status, adapter status, and readiness without exposing secrets.
+- `POST /api/live/proposal` reuses the deterministic risk gate and returns a hashed proposal; `POST /api/live/approve` issues an HMAC approval only after `APPROVE LIVE`.
+- `POST /api/live/order` rechecks the gate, requires `EXECUTE LIVE`, consumes the approval, and blocks unless a named adapter is wired and ready. The default returns `LIVE_PROVIDER_NOT_WIRED`.
+- `POST /api/live/kill-switch` arms by default; disarming requires `DISABLE KILL SWITCH` and an admin token. `POST /api/live/reconcile` summarizes local vs broker order drift.
+- `GET /api/audit/verify` verifies the SHA-256 hash chain in `data/audit.jsonl`. Signed-in users store live event metadata in the RLS-protected `live_events` table; approval tokens are never stored.
+
+## 11. Recommended next implementation
+- Wire a real MetaApi/MT5 adapter under `ai/adapters/` and validate it with a demo account.
 - Add a screener, saved drawing templates, and a real economic calendar provider.
 - Replace the GC=F proxy with a licensed spot XAU/USD feed and a real DXY feed.
 - Wire Expo push tokens and a server-side notification scheduler for background alerts.
-- Add Phase 5 live broker controls: token vault, kill switch, reconciliation, and explicit live-order approval UI.
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
-- Add an in-app audit viewer.
 
-## 11. Safety checklist
+## 12. Safety checklist
 - Keep AI output informational only.
-- No auto-trading; AI plans stay paper-only and require explicit confirmation.
+- Paper is the default; guarded live is fail-closed and requires admin token, approval secret, explicit approvals, and a disarmed kill switch.
 - Keep API keys in environment variables on the server.
-- Keep audit logs for AI actions and user approvals.
+- Keep hash-chained audit logs for AI actions, approvals, orders, and reconciliation.

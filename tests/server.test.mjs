@@ -65,6 +65,13 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
       MARKET_DATA_BASE_URL: `http://127.0.0.1:${stubPort}`,
       AUDIT_LOG_FILE: auditFile,
       MONITOR_DISABLED: 'true',
+      ENABLE_LIVE_TRADING: 'true',
+      LIVE_ADMIN_TOKEN: 'test-admin-token',
+      LIVE_APPROVAL_SECRET: 'test-approval-secret',
+      LIVE_ADAPTER: 'disabled',
+      LIVE_KILL_SWITCH: 'true',
+      METAAPI_TOKEN: 'test-token',
+      METAAPI_ACCOUNT_ID: 'test-account',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -156,6 +163,77 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(evaluationResponse.status, 200);
     assert.equal((await evaluationResponse.json()).outcome, 'take_profit');
 
+    const liveHeaders = { 'content-type': 'application/json', 'x-live-admin-token': 'test-admin-token' };
+    const liveStatusInitial = await (await fetch(`${base}/api/live/status`)).json();
+    assert.equal(liveStatusInitial.killSwitch, true);
+    assert.equal(liveStatusInitial.liveOrdersEnabled, false);
+    assert.equal(liveStatusInitial.vault.tokenConfigured, true);
+    assert.equal(liveStatusInitial.vault.exposedToBrowser, false);
+
+    const disarm = await fetch(`${base}/api/live/kill-switch`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({ enabled: false, confirmation: 'DISABLE KILL SWITCH' }),
+    });
+    assert.equal(disarm.status, 200);
+    assert.equal((await disarm.json()).killSwitch, false);
+
+    const proposalResponse = await fetch(`${base}/api/live/proposal`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({
+        plan: ai.plan,
+        risk: ai.risk,
+        context: { ...context, quotedAt: new Date().toISOString(), spreadPct: 0.02 },
+        account: { equity: 10000, dailyLossPct: 0, openPositions: 0 },
+      }),
+    });
+    assert.equal(proposalResponse.status, 200);
+    const proposal = await proposalResponse.json();
+    assert.equal(proposal.decision, 'pending_live_approval');
+    assert.equal(proposal.requiresApproval, true);
+    assert.equal(proposal.liveOnly, true);
+
+    const approvalResponse = await fetch(`${base}/api/live/approve`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({ proposalId: proposal.id, confirmation: 'APPROVE LIVE' }),
+    });
+    assert.equal(approvalResponse.status, 200);
+    const approval = await approvalResponse.json();
+    assert.equal(approval.proposalId, proposal.id);
+    assert.equal(typeof approval.code, 'string');
+
+    const liveOrderResponse = await fetch(`${base}/api/live/order`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({ approval, confirmation: 'EXECUTE LIVE' }),
+    });
+    assert.equal(liveOrderResponse.status, 200);
+    const liveOrder = await liveOrderResponse.json();
+    assert.equal(liveOrder.status, 'blocked');
+    assert.equal(liveOrder.code, 'LIVE_PROVIDER_NOT_WIRED');
+
+    const kill = await fetch(`${base}/api/live/kill-switch`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(kill.status, 200);
+    assert.equal((await kill.json()).killSwitch, true);
+
+    const reconcile = await fetch(`${base}/api/live/reconcile`, {
+      method: 'POST',
+      headers: liveHeaders,
+      body: JSON.stringify({}),
+    });
+    assert.equal(reconcile.status, 200);
+    assert.equal((await reconcile.json()).status, 'blocked');
+
+    const auditVerify = await (await fetch(`${base}/api/audit/verify`)).json();
+    assert.equal(auditVerify.ok, true);
+    assert.ok(auditVerify.count > 0);
+
     const invalid = await fetch(`${base}/api/ai`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
     assert.equal(invalid.status, 400);
 
@@ -171,6 +249,10 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.match(audit, /"event":"monitor_event"/);
     assert.match(audit, /"event":"backtest_run"/);
     assert.match(audit, /"event":"paper_order_simulated"/);
+    assert.match(audit, /"event":"live_proposal_created"/);
+    assert.match(audit, /"event":"live_approval_issued"/);
+    assert.match(audit, /"event":"live_order_result"/);
+    assert.match(audit, /"event":"live_kill_switch_updated"/);
   } finally {
     child.kill('SIGTERM');
     await new Promise(resolve => {

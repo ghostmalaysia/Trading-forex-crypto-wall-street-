@@ -215,7 +215,35 @@
               <div id="paperOrders" class="paper-orders"></div>
             </section>
           </div>
-          <p class="disclaimer">No broker order is placed. Live execution adapters are scaffolded but disabled.</p>
+          <div class="live-grid">
+            <section class="agent-block live-block">
+              <h4>Guarded live</h4>
+              <div id="liveStatus" class="agent-status">Loading live guard…</div>
+              <label for="liveAdminToken">Live admin token</label>
+              <input id="liveAdminToken" type="password" autocomplete="off" placeholder="Server admin token" />
+              <div class="live-actions">
+                <button id="stageLiveBtn" type="button">Stage proposal</button>
+                <button id="killLiveBtn" type="button">Kill live</button>
+                <button id="reconcileLiveBtn" type="button">Reconcile</button>
+                <button id="verifyAuditBtn" type="button">Verify audit</button>
+              </div>
+              <div id="auditVerify" class="agent-result"></div>
+            </section>
+            <section class="agent-block live-block">
+              <h4>Human approval</h4>
+              <div id="liveProposal" class="agent-result">Generate and approve a plan first.</div>
+              <input id="liveApproveConfirm" type="text" placeholder="Type APPROVE LIVE" autocomplete="off" />
+              <button id="approveLiveBtn" type="button">Approve staged proposal</button>
+              <div id="liveApproval" class="agent-result"></div>
+              <input id="liveExecuteConfirm" type="text" placeholder="Type EXECUTE LIVE" autocomplete="off" />
+              <button id="executeLiveBtn" type="button">Send guarded order</button>
+              <input id="liveDisarmConfirm" type="text" placeholder="Type DISABLE KILL SWITCH" autocomplete="off" />
+              <button id="disarmLiveBtn" type="button">Disarm kill switch</button>
+              <div id="liveResult" class="agent-result"></div>
+              <div id="liveEvents" class="agent-events"></div>
+            </section>
+          </div>
+          <p class="disclaimer">Live orders require server credentials, a wired adapter, admin token, approval secret, explicit human approval, and a disarmed kill switch. The default adapter blocks every live order.</p>
         </article>
       </section>
 

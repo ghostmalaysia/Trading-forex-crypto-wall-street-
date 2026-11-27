@@ -72,11 +72,11 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 **Outcome:** AI can study, monitor, and assist workflows safely; learns continuously from user-approved outcomes. Live broker execution remains disabled and belongs to Phase 5.
 
 ## Phase 5 - MT5/MetaApi Live Integration (Guarded)
-- [ ] MetaApi account connection (token vault, server-side only)
-- [ ] Execution adapter interface: `PaperBroker` / `MetaApiBroker`
-- [ ] Deterministic risk gate service (position sizing, daily loss, exposure, stale/spread checks)
-- [ ] Human approval UI/card before any live order
-- [ ] Kill switch, circuit breakers, and reconciliation jobs
-- [ ] Immutable audit log for proposals, approvals, orders, broker responses
+- [x] MetaApi token vault and readiness checks (server-side only; credentials never returned to clients)
+- [x] Execution adapter interface with blocked-by-default `disabled` adapter and dynamic named adapters
+- [x] Deterministic risk gate service (position sizing, daily loss, exposure, stale/spread checks)
+- [x] Human approval UI/card before any live order on web and mobile
+- [x] Kill switch, circuit breakers, and reconciliation endpoints/jobs
+- [x] Immutable hash-chained audit log for proposals, approvals, orders, broker responses, and verification
 
-**Outcome:** Optional live MT5 trading through dashboard, gated by deterministic risk controls and explicit user approval.
+**Outcome:** Guarded live scaffolding is ready and fail-closed. A real live broker adapter plus server credentials must still be configured; every order requires explicit admin/approval confirmation and a fresh risk check.

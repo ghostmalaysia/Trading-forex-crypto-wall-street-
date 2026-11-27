@@ -306,5 +306,24 @@
       const data = await authorizedFetch(`${restUrl}/ai_evaluations${query}`);
       return { ok: true, data: Array.isArray(data) ? data : [] };
     },
+    async saveLiveEvent(event) {
+      if (!session?.user?.id || !event || typeof event !== 'object') return { ok: false, skipped: true };
+      return post('/live_events', {
+        user_key: session.user.id,
+        proposal_ref: event.proposalId ? String(event.proposalId).slice(0, 120) : null,
+        approval_ref: event.approvalId ? String(event.approvalId).slice(0, 120) : null,
+        order_ref: event.orderId || event.orderRef ? String(event.orderId || event.orderRef).slice(0, 120) : null,
+        event: String(event.event || 'live_event').slice(0, 80),
+        status: event.status ? String(event.status).slice(0, 40) : null,
+        payload: event,
+      });
+    },
+    async loadLiveEvents(limit = 30) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const size = Math.min(Math.max(Number(limit) || 30, 1), 100);
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=proposal_ref,approval_ref,order_ref,event,status,payload,created_at&order=created_at.desc&limit=${size}`;
+      const data = await authorizedFetch(`${restUrl}/live_events${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
   };
 })();

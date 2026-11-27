@@ -43,6 +43,33 @@ export function createApiClient({ baseUrl, fetchImpl = fetch } = {}) {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+    liveStatus: () => request('/api/live/status'),
+    liveProposal: (input, headers) => request('/api/live/proposal', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(input),
+    }),
+    approveLive: (input, headers) => request('/api/live/approve', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(input),
+    }),
+    executeLive: (input, headers) => request('/api/live/order', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(input),
+    }),
+    setLiveKillSwitch: (input, headers) => request('/api/live/kill-switch', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(input),
+    }),
+    reconcileLive: (input, headers) => request('/api/live/reconcile', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(input),
+    }),
+    verifyAudit: () => request('/api/audit/verify'),
     askAi: (message, mode, context) => request('/api/ai', {
       method: 'POST',
       body: JSON.stringify({ message, mode, context }),

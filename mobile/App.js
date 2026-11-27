@@ -51,6 +51,17 @@ export default function App() {
   const [agentBacktest, setAgentBacktest] = useState(null);
   const [paperOrders, setPaperOrders] = useState([]);
   const [paperConfirm, setPaperConfirm] = useState('');
+  const [liveStatus, setLiveStatus] = useState(null);
+  const [liveProposal, setLiveProposal] = useState(null);
+  const [liveApproval, setLiveApproval] = useState(null);
+  const [liveResult, setLiveResult] = useState(null);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [auditVerify, setAuditVerify] = useState(null);
+  const [liveAdminToken, setLiveAdminToken] = useState('');
+  const [liveApproveConfirm, setLiveApproveConfirm] = useState('');
+  const [liveExecuteConfirm, setLiveExecuteConfirm] = useState('');
+  const [liveDisarmConfirm, setLiveDisarmConfirm] = useState('');
+  const liveHeaders = useMemo(() => ({ 'x-live-admin-token': liveAdminToken.trim() }), [liveAdminToken]);
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('Bina cadangan paper trading untuk XAU/USD.');
   const [watchlist, setWatchlist] = useState([]);
@@ -74,8 +85,12 @@ export default function App() {
 
   const loadAgentCloud = useCallback(async () => {
     if (!cloudState.signedIn) return;
-    const result = await cloud.loadPaperOrders(20);
-    setPaperOrders(Array.isArray(result.data) ? result.data : []);
+    const [orders, events] = await Promise.all([
+      cloud.loadPaperOrders(20),
+      cloud.loadLiveEvents(20),
+    ]);
+    setPaperOrders(Array.isArray(orders.data) ? orders.data : []);
+    setLiveEvents(Array.isArray(events.data) ? events.data : []);
   }, [cloud, cloudState.signedIn]);
 
   const checkAlerts = useCallback(async (snapshot) => {
@@ -96,18 +111,20 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker] = await Promise.all([
+      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker, nextLiveStatus] = await Promise.all([
         apiClient.health(),
         apiClient.market(),
         apiClient.news(),
         apiClient.monitor(),
         apiClient.brokerStatus(),
+        apiClient.liveStatus(),
       ]);
       setHealth(nextHealth);
       setMarket(nextMarket);
       setFeed(nextFeed);
       setAgentMonitor(nextMonitor);
       setBroker(nextBroker);
+      setLiveStatus(nextLiveStatus);
       await checkAlerts(nextMarket);
     } catch (requestError) {
       setError(requestError.message || 'Cannot reach the server');
@@ -237,6 +254,87 @@ export default function App() {
     }
   }), [apiClient, buildContext, cloud, cloudState.signedIn, paperConfirm, plan, run, selected]);
 
+  const persistLiveEvent = useCallback((event) => {
+    if (cloudState.signedIn) cloud.saveLiveEvent(event).catch(() => {});
+  }, [cloud, cloudState.signedIn]);
+
+  const handleStageLive = useCallback(() => run(async () => {
+    const context = buildContext();
+    if (!context) throw new Error('Market data is not ready yet.');
+    if (!plan || plan.risk?.decision !== 'pending_human_approval' || !plan.risk?.eligible) {
+      throw new Error('Generate and approve a paper plan in AI first.');
+    }
+    const proposal = await apiClient.liveProposal({
+      plan: { ...plan.plan, symbol: selected },
+      risk: plan.risk,
+      context: { ...context, quotedAt: new Date().toISOString(), spreadPct: 0.02 },
+      account: { equity: 10000, dailyLossPct: 0, openPositions: 0 },
+    });
+    setLiveProposal(proposal);
+    setLiveApproval(null);
+    setLiveResult(null);
+    persistLiveEvent({ event: 'live_proposal_staged', proposalId: proposal.id, status: proposal.decision, symbol: proposal.symbol });
+    setLiveStatus(await apiClient.liveStatus());
+  }), [apiClient, buildContext, persistLiveEvent, plan, run, selected]);
+
+  const handleApproveLive = useCallback(() => run(async () => {
+    if (!liveProposal) throw new Error('Stage a live proposal first.');
+    const approval = await apiClient.approveLive({
+      proposalId: liveProposal.id,
+      confirmation: liveApproveConfirm,
+    }, liveHeaders);
+    setLiveApproval(approval);
+    setLiveApproveConfirm('');
+    persistLiveEvent({ event: 'live_approval_requested', proposalId: approval.proposalId, approvalId: approval.id, status: approval.status });
+  }), [apiClient, liveApproveConfirm, liveHeaders, liveProposal, persistLiveEvent, run]);
+
+  const handleExecuteLive = useCallback(() => run(async () => {
+    if (!liveApproval) throw new Error('Approve the staged proposal first.');
+    const result = await apiClient.executeLive({
+      approval: liveApproval,
+      confirmation: liveExecuteConfirm,
+    }, liveHeaders);
+    setLiveResult(result);
+    setLiveApproval(null);
+    setLiveExecuteConfirm('');
+    persistLiveEvent({
+      event: 'live_order_attempt',
+      proposalId: liveProposal?.id || null,
+      orderId: result.id || result.orderId || null,
+      status: result.status,
+      code: result.code || null,
+    });
+    setLiveStatus(await apiClient.liveStatus());
+  }), [apiClient, liveApproval, liveExecuteConfirm, liveHeaders, liveProposal, persistLiveEvent, run]);
+
+  const handleKillLive = useCallback(() => run(async () => {
+    const status = await apiClient.setLiveKillSwitch({ enabled: true }, liveHeaders);
+    setLiveStatus(status);
+    setLiveApproval(null);
+    persistLiveEvent({ event: 'live_kill_switch_armed', status: 'armed' });
+  }), [apiClient, liveHeaders, persistLiveEvent, run]);
+
+  const handleDisarmLive = useCallback(() => run(async () => {
+    const status = await apiClient.setLiveKillSwitch({
+      enabled: false,
+      confirmation: liveDisarmConfirm,
+    }, liveHeaders);
+    setLiveStatus(status);
+    setLiveDisarmConfirm('');
+    persistLiveEvent({ event: 'live_kill_switch_disarmed', status: 'disarmed' });
+  }), [apiClient, liveDisarmConfirm, liveHeaders, persistLiveEvent, run]);
+
+  const handleReconcileLive = useCallback(() => run(async () => {
+    const result = await apiClient.reconcileLive({}, liveHeaders);
+    setLiveResult(result);
+    persistLiveEvent({ event: 'live_reconciliation', status: result.status, code: result.code || null });
+    setLiveStatus(await apiClient.liveStatus());
+  }), [apiClient, liveHeaders, persistLiveEvent, run]);
+
+  const handleVerifyAudit = useCallback(() => run(async () => {
+    setAuditVerify(await apiClient.verifyAudit());
+  }), [apiClient, run]);
+
   const handleSelectSymbol = useCallback((symbol) => {
     setSelected(symbol);
     if (cloudState.signedIn) cloud.saveSettings({ theme: 'dark', default_symbol: symbol }).catch(() => {});
@@ -285,6 +383,14 @@ export default function App() {
   const handleSignOut = useCallback(() => run(async () => {
     await cloud.signOut();
     setPaperOrders([]);
+    setLiveEvents([]);
+    setLiveProposal(null);
+    setLiveApproval(null);
+    setLiveResult(null);
+    setLiveAdminToken('');
+    setLiveApproveConfirm('');
+    setLiveExecuteConfirm('');
+    setLiveDisarmConfirm('');
     syncCloudState();
   }), [cloud, run, syncCloudState]);
 
@@ -363,12 +469,33 @@ export default function App() {
         paperOrders={paperOrders}
         confirmation={paperConfirm}
         setConfirmation={setPaperConfirm}
+        liveStatus={liveStatus}
+        liveProposal={liveProposal}
+        liveApproval={liveApproval}
+        liveResult={liveResult}
+        liveEvents={liveEvents}
+        auditVerify={auditVerify}
+        adminToken={liveAdminToken}
+        setAdminToken={setLiveAdminToken}
+        liveApproveConfirm={liveApproveConfirm}
+        setLiveApproveConfirm={setLiveApproveConfirm}
+        liveExecuteConfirm={liveExecuteConfirm}
+        setLiveExecuteConfirm={setLiveExecuteConfirm}
+        liveDisarmConfirm={liveDisarmConfirm}
+        setLiveDisarmConfirm={setLiveDisarmConfirm}
         busy={busy}
         error={error}
         onRefresh={refreshAll}
         onRunMonitor={handleRunMonitor}
         onBacktest={handleBacktest}
         onExecute={handleExecutePaper}
+        onStageLive={handleStageLive}
+        onApproveLive={handleApproveLive}
+        onExecuteLive={handleExecuteLive}
+        onKillLive={handleKillLive}
+        onDisarmLive={handleDisarmLive}
+        onReconcileLive={handleReconcileLive}
+        onVerifyAudit={handleVerifyAudit}
       />
     );
   } else {
