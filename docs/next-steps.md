@@ -2,7 +2,7 @@
 
 ## 1. Configure Supabase (cloud memory and AI learning)
 1. Create a free project at [supabase.com](https://supabase.com).
-2. For an existing project, run `supabase/migrations/202611260001_secure_user_memory.sql`, `supabase/migrations/202611270001_ai_learning_and_plans.sql`, and `supabase/migrations/202611270002_audit_logs.sql` in SQL Editor. For a fresh project, run `supabase/schema.sql`.
+2. For an existing project, run `supabase/migrations/202611260001_secure_user_memory.sql`, `supabase/migrations/202611270001_ai_learning_and_plans.sql`, `supabase/migrations/202611270002_audit_logs.sql`, and `supabase/migrations/202611280001_agent_workflows.sql` in SQL Editor. For a fresh project, run `supabase/schema.sql`.
 3. Enable email sign-up in Supabase Auth and set the project's Site URL.
 4. Serve the web app. In the **Cloud memory** card, enter:
    - `url`: your project URL
@@ -49,15 +49,24 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - Alert rules for XAU/USD and DXY are evaluated locally and use Expo local notifications after permission. Remote push tokens and background delivery are not yet wired.
 - Expo was not executed in this environment; run `cd mobile && npm install && cp .env.example .env && npm start` to verify on a device or simulator.
 
-## 9. Recommended next implementation
+## 9. Current agent workflows (done)
+- `GET /api/monitor` exposes rule state, recent events, interval, and `paperOnly: true`; `POST /api/monitor/rules` normalizes rules limited to XAU/USD and DXY.
+- `POST /api/monitor/run` evaluates thresholds and price anomalies; a server interval runs the same cycle unless `MONITOR_DISABLED=true` is set.
+- `POST /api/backtest` returns an educational SMA-cross simulation using the selected chart series; it is not predictive.
+- `POST /api/paper/order` requires an approved plan plus the exact confirmation `EXECUTE PAPER`; `POST /api/paper/evaluate` reports outcome and PnL.
+- `GET /api/broker/status` reports `liveOrdersEnabled: false`. MetaApi/MT5 adapters are scaffolded only; no live order is placed.
+- Web Agent Lab and the mobile Agent screen expose monitor, backtest, paper execution, and broker status. Signed-in users persist paper orders and evaluations through per-user RLS policies.
+
+## 10. Recommended next implementation
 - Add a screener, saved drawing templates, and a real economic calendar provider.
 - Replace the GC=F proxy with a licensed spot XAU/USD feed and a real DXY feed.
 - Wire Expo push tokens and a server-side notification scheduler for background alerts.
+- Add Phase 5 live broker controls: token vault, kill switch, reconciliation, and explicit live-order approval UI.
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
 - Add an in-app audit viewer.
 
-## 10. Safety checklist
+## 11. Safety checklist
 - Keep AI output informational only.
 - No auto-trading; AI plans stay paper-only and require explicit confirmation.
 - Keep API keys in environment variables on the server.

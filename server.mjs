@@ -8,6 +8,10 @@ import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.m
 import { complete, providerName, modelName } from './ai/provider.mjs';
 import { analyzeChart, normalizePlan, riskGate } from './ai/plan.mjs';
 import { CALENDAR, FOCUS, NEWS } from './shared/feed-data.js';
+import { detectAnomalies, evaluateRules, normalizeRule } from './ai/monitor.mjs';
+import { backtestSmaCross } from './ai/backtest.mjs';
+import { evaluatePaperOrder, simulateFill } from './ai/execution.mjs';
+import { brokerStatus, brokers } from './ai/broker.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
@@ -20,7 +24,13 @@ const marketTargets = {
   DXY: { providerSymbol: 'DX-Y.NYB', label: 'US Dollar Index' },
 };
 const marketCache = { payload: null, fetchedAt: 0 };
+const monitorState = { rules: [], events: [], lastRunAt: null, running: false };
 const auditFile = process.env.AUDIT_LOG_FILE || resolve(root, 'data', 'audit.jsonl');
+
+try {
+  const seededRules = JSON.parse(process.env.MONITOR_RULES || '[]');
+  if (Array.isArray(seededRules)) monitorState.rules = seededRules.map(normalizeRule).filter(Boolean).slice(0, 20);
+} catch {}
 let rpcId = 0;
 let rpcProcess;
 let rpcBuffer = '';
@@ -141,6 +151,16 @@ async function readBody(req) {
   });
 }
 
+async function readJsonBody(req) {
+  let payload;
+  try { payload = JSON.parse(await readBody(req)); }
+  catch (error) {
+    throw new Error(error.message === 'Request body too large' ? error.message : 'Invalid JSON body');
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Expected a JSON object');
+  return payload;
+}
+
 async function fetchMarketTarget(symbol, target) {
   const base = process.env.MARKET_DATA_BASE_URL || 'https://query1.finance.yahoo.com';
   const interval = process.env.MARKET_DATA_INTERVAL || '1d';
@@ -190,6 +210,36 @@ async function marketSnapshot() {
   marketCache.payload = payload;
   marketCache.fetchedAt = now;
   return payload;
+}
+
+function monitorSnapshot() {
+  return {
+    enabled: true,
+    intervalSeconds: Math.max(30, Number(process.env.MONITOR_INTERVAL_SECONDS) || 60),
+    lastRunAt: monitorState.lastRunAt,
+    rules: monitorState.rules,
+    events: monitorState.events.slice(0, 50),
+    paperOnly: true,
+  };
+}
+
+async function runMonitorCycle() {
+  if (monitorState.running) return monitorSnapshot();
+  monitorState.running = true;
+  try {
+    const snapshot = await marketSnapshot();
+    const thresholdEvents = evaluateRules(snapshot.items, monitorState.rules);
+    const anomalies = detectAnomalies(snapshot.items, { zScore: Number(process.env.MONITOR_ZSCORE) || 2.5 });
+    const events = [...thresholdEvents, ...anomalies].map(event => ({ ...event, at: new Date().toISOString() }));
+    monitorState.events = [...events, ...monitorState.events].slice(0, 100);
+    monitorState.lastRunAt = new Date().toISOString();
+    if (events.length) {
+      await appendAudit('monitor_event', { count: events.length, symbols: [...new Set(events.map(event => event.symbol))] });
+    }
+    return monitorSnapshot();
+  } finally {
+    monitorState.running = false;
+  }
 }
 
 function sanitizeContext(value) {
@@ -244,6 +294,73 @@ async function handle(req, res) {
   if (url.pathname === '/api/news') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
     return sendJson(res, 200, { items: NEWS, calendar: CALENDAR, focus: FOCUS, provider: 'curated-mock', fetchedAt: new Date().toISOString() });
+  }
+  if (url.pathname === '/api/monitor') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, monitorSnapshot());
+  }
+  if (url.pathname === '/api/monitor/rules') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    if (!Array.isArray(payload.rules)) return sendJson(res, 400, { error: 'Provide a rules array' });
+    const rules = payload.rules.map(normalizeRule).filter(Boolean).slice(0, 20);
+    monitorState.rules = rules;
+    await appendAudit('monitor_rules_updated', { count: rules.length, symbols: rules.map(rule => rule.symbol) });
+    return sendJson(res, 200, monitorSnapshot());
+  }
+  if (url.pathname === '/api/monitor/run') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, await runMonitorCycle());
+  }
+  if (url.pathname === '/api/backtest') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const series = Array.isArray(payload.series) ? payload.series.slice(-300) : [];
+    if (series.length < 5) return sendJson(res, 400, { error: 'Provide at least 5 price points' });
+    const result = backtestSmaCross(series, { fast: payload.fast, slow: payload.slow, feePct: payload.feePct });
+    await appendAudit('backtest_run', { symbol: payload.symbol || null, points: series.length, tradeCount: result.tradeCount || 0 });
+    return sendJson(res, 200, result);
+  }
+  if (url.pathname === '/api/broker/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, brokerStatus());
+  }
+  if (url.pathname === '/api/paper/order') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const broker = payload.broker === 'metaapi' ? brokers.metaapi : brokers.paper;
+    try {
+      const order = await broker.placeOrder({
+        plan: payload.plan,
+        risk: payload.risk,
+        context: payload.context,
+        confirmation: payload.confirmation,
+      });
+      await appendAudit('paper_order_simulated', { orderId: order.id, symbol: order.symbol, side: order.side, provider: 'paper-simulator' });
+      return sendJson(res, 200, order);
+    } catch (error) {
+      await appendAudit('paper_order_rejected', { reason: String(error.message).slice(0, 160) });
+      return sendJson(res, 400, { error: error.message });
+    }
+  }
+  if (url.pathname === '/api/paper/evaluate') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    try {
+      const result = evaluatePaperOrder(payload.order, payload.price);
+      await appendAudit('paper_order_evaluated', { orderId: result.orderId, outcome: result.outcome, pnl: result.pnl });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, 400, { error: error.message });
+    }
   }
   if (url.pathname === '/api/ai') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -321,6 +438,13 @@ async function handle(req, res) {
   } catch {
     sendJson(res, 404, { error: 'Not found' });
   }
+}
+
+if (process.env.MONITOR_DISABLED !== 'true') {
+  const monitorInterval = setInterval(() => {
+    runMonitorCycle().catch(() => {});
+  }, monitorSnapshot().intervalSeconds * 1000);
+  monitorInterval.unref();
 }
 
 startLongbridge();

@@ -11,6 +11,7 @@ import DashboardScreen from './screens/DashboardScreen.js';
 import WatchlistScreen from './screens/WatchlistScreen.js';
 import NewsScreen from './screens/NewsScreen.js';
 import AiScreen from './screens/AiScreen.js';
+import AgentScreen from './screens/AgentScreen.js';
 import SettingsScreen from './screens/SettingsScreen.js';
 
 const apiBaseKey = 'tradewall_mobile_api_base';
@@ -25,6 +26,7 @@ const tabs = [
   { key: 'watchlist', label: 'WATCH' },
   { key: 'news', label: 'NEWS' },
   { key: 'ai', label: 'AI' },
+  { key: 'agent', label: 'AGENT' },
   { key: 'settings', label: 'SET' },
 ];
 
@@ -44,6 +46,11 @@ export default function App() {
   const [market, setMarket] = useState(null);
   const [feed, setFeed] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [agentMonitor, setAgentMonitor] = useState(null);
+  const [broker, setBroker] = useState(null);
+  const [agentBacktest, setAgentBacktest] = useState(null);
+  const [paperOrders, setPaperOrders] = useState([]);
+  const [paperConfirm, setPaperConfirm] = useState('');
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('Bina cadangan paper trading untuk XAU/USD.');
   const [watchlist, setWatchlist] = useState([]);
@@ -65,6 +72,12 @@ export default function App() {
     setCloudState({ ...cloud.getState(), url: cloud.getPublicConfig().url });
   }, [cloud]);
 
+  const loadAgentCloud = useCallback(async () => {
+    if (!cloudState.signedIn) return;
+    const result = await cloud.loadPaperOrders(20);
+    setPaperOrders(Array.isArray(result.data) ? result.data : []);
+  }, [cloud, cloudState.signedIn]);
+
   const checkAlerts = useCallback(async (snapshot) => {
     const items = snapshot?.items || [];
     for (const rule of alertRules) {
@@ -83,14 +96,18 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const [nextHealth, nextMarket, nextFeed] = await Promise.all([
+      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker] = await Promise.all([
         apiClient.health(),
         apiClient.market(),
         apiClient.news(),
+        apiClient.monitor(),
+        apiClient.brokerStatus(),
       ]);
       setHealth(nextHealth);
       setMarket(nextMarket);
       setFeed(nextFeed);
+      setAgentMonitor(nextMonitor);
+      setBroker(nextBroker);
       await checkAlerts(nextMarket);
     } catch (requestError) {
       setError(requestError.message || 'Cannot reach the server');
@@ -144,6 +161,9 @@ export default function App() {
   useEffect(() => { writeJson(messagesKey, messages); }, [messages]);
   useEffect(() => { writeJson(alertsKey, alertRules); }, [alertRules]);
   useEffect(() => { refreshAll(); }, [refreshAll]);
+  useEffect(() => {
+    loadAgentCloud().catch(() => {});
+  }, [loadAgentCloud]);
 
   function buildContext() {
     const item = market?.items?.find(entry => entry.symbol === selected) || market?.items?.[0];
@@ -186,6 +206,37 @@ export default function App() {
     askAi('plan', 'Bina cadangan paper trading untuk simbol ini.');
   }, [askAi]);
 
+  const handleRunMonitor = useCallback(() => run(async () => {
+    setAgentMonitor(await apiClient.runMonitor());
+  }), [apiClient, run]);
+
+  const handleBacktest = useCallback(() => run(async () => {
+    const item = market?.items?.find(entry => entry.symbol === selected) || market?.items?.[0];
+    const series = (item?.series || []).map(Number).filter(Number.isFinite);
+    setAgentBacktest(await apiClient.backtest({ symbol: selected, series, fast: 20, slow: 50, feePct: 0.05 }));
+  }), [apiClient, market, run, selected]);
+
+  const handleExecutePaper = useCallback(() => run(async () => {
+    const context = buildContext();
+    if (!context) throw new Error('Market data is not ready yet.');
+    if (!plan || plan.risk?.decision !== 'pending_human_approval' || !plan.risk?.eligible) {
+      throw new Error('Generate and approve a paper plan in AI first.');
+    }
+    const order = await apiClient.paperOrder({
+      plan: { ...plan.plan, symbol: selected },
+      risk: plan.risk,
+      context,
+      confirmation: paperConfirm,
+    });
+    const evaluation = await apiClient.evaluatePaperOrder({ order, price: context.price });
+    setPaperOrders(previous => [order, evaluation, ...previous].slice(0, 30));
+    setPaperConfirm('');
+    if (cloudState.signedIn) {
+      cloud.savePaperOrder(order).catch(() => {});
+      cloud.saveEvaluation(evaluation).catch(() => {});
+    }
+  }), [apiClient, buildContext, cloud, cloudState.signedIn, paperConfirm, plan, run, selected]);
+
   const handleSelectSymbol = useCallback((symbol) => {
     setSelected(symbol);
     if (cloudState.signedIn) cloud.saveSettings({ theme: 'dark', default_symbol: symbol }).catch(() => {});
@@ -226,12 +277,14 @@ export default function App() {
     if (FOCUS.includes(settings.preferences?.default_symbol)) setSelected(settings.preferences.default_symbol);
     if (Array.isArray(list.data) && list.data.length) setWatchlist(list.data);
     if (Array.isArray(chat.data) && chat.data.length) setMessages(chat.data);
-  }), [cloud, run, syncCloudState]);
+    await loadAgentCloud();
+  }), [cloud, loadAgentCloud, run, syncCloudState]);
 
   const handleSignUp = handleSignIn;
 
   const handleSignOut = useCallback(() => run(async () => {
     await cloud.signOut();
+    setPaperOrders([]);
     syncCloudState();
   }), [cloud, run, syncCloudState]);
 
@@ -299,6 +352,23 @@ export default function App() {
         onPlan={handlePlan}
         plan={plan}
         onClear={() => setMessages([])}
+      />
+    );
+  } else if (tab === 'agent') {
+    screen = (
+      <AgentScreen
+        monitor={agentMonitor}
+        broker={broker}
+        backtest={agentBacktest}
+        paperOrders={paperOrders}
+        confirmation={paperConfirm}
+        setConfirmation={setPaperConfirm}
+        busy={busy}
+        error={error}
+        onRefresh={refreshAll}
+        onRunMonitor={handleRunMonitor}
+        onBacktest={handleBacktest}
+        onExecute={handleExecutePaper}
       />
     );
   } else {

@@ -33,24 +33,24 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 
 ## Phase 1 - Live Data & Usable Dashboard
 - [ ] Migrate web to Next.js + TypeScript + Tailwind
-- [ ] Integrate free market data providers via `DataProvider` adapter
-- [ ] Add symbol search and watchlist persistence in Supabase
-- [ ] Integrate news/RSS feeds and filters (Forex/Crypto/Stocks)
-- [ ] Add TradingView Lightweight Charts with timeframes/indicators
-- [ ] Responsive/mobile-web polish
+- [x] Integrate free/indicative market data adapters (Yahoo proxies with mock fallback)
+- [x] Add watchlist persistence in Supabase
+- [x] Integrate curated market/news feeds focused on XAU/USD and DXY
+- [x] Add dependency-free TradingView-style canvas chart with timeframes/indicators
+- [x] Responsive/mobile-web polish
 
-**Outcome:** useful daily dashboard with real data and cloud-synced watchlists.
+**Outcome:** useful daily dashboard with real data and cloud-synced watchlists. Next.js migration remains deferred; the shipped MVP is a static web app.
 
 ## Phase 2 - AI Assistant v1
-- [ ] `AIProvider` abstraction (mock -> free LLM/local model)
-- [ ] AI chat panel with market/news context
+- [x] `AIProvider` abstraction (rule-based fallback -> Groq)
+- [x] AI chat panel with market/news context
 - [ ] Scheduled summaries: "market open", "daily recap"
-- [ ] Alert explanations ("why this moved")
-- [ ] User preference memory in Supabase (risk profile, interests)
-- [ ] AI feedback capture (thumbs up/down, outcome notes) for learning loop
-- [ ] Safety guardrails and disclaimer UX
+- [x] Alert explanations ("why this moved")
+- [x] User preference memory in Supabase (risk profile, interests)
+- [x] AI feedback capture (thumbs up/down, outcome notes) for learning loop
+- [x] Safety guardrails and disclaimer UX
 
-**Outcome:** AI helps monitor and explain, with persistent cloud memory and user control.
+**Outcome:** AI helps monitor and explain, with persistent cloud memory and user control. Scheduled summaries remain a future addition.
 
 ## Phase 3 - Mobile Apps
 - [x] Expo React Native app scaffold
@@ -62,14 +62,14 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 **Outcome:** Android/iOS companion app with shared cloud memory. Run `cd mobile && npm install && cp .env.example .env && npm start`; set `EXPO_PUBLIC_API_BASE_URL` to a reachable TradeWall server.
 
 ## Phase 4 - AI Agent Workflows (Safe)
-- [ ] Background monitoring jobs (price/news/anomaly alerts)
-- [ ] Strategy study/backtest notebooks (educational)
-- [ ] Recommendation evaluation and feedback loop
-- [ ] Paper trading simulation first
-- [ ] Optional broker integrations (MetaApi/MT5) - **confirm-before-execute only**
-- [ ] Audit logs for all AI-suggested/executed actions
+- [x] Background monitoring jobs (price/anomaly evaluation with server interval)
+- [x] Strategy study/backtest endpoint (educational SMA-cross simulation)
+- [x] Recommendation evaluation and feedback loop (`/api/paper/evaluate`, `ai_evaluations`)
+- [x] Paper trading simulation first (`EXECUTE PAPER` confirmation required)
+- [x] Optional broker adapters scaffolded - **live orders disabled; confirm-before-execute only**
+- [x] Audit logs for all AI-suggested/executed actions
 
-**Outcome:** AI can study, monitor, and assist workflows safely; learns continuously from user-approved outcomes.
+**Outcome:** AI can study, monitor, and assist workflows safely; learns continuously from user-approved outcomes. Live broker execution remains disabled and belongs to Phase 5.
 
 ## Phase 5 - MT5/MetaApi Live Integration (Guarded)
 - [ ] MetaApi account connection (token vault, server-side only)

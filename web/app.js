@@ -30,7 +30,8 @@ const CALENDAR = [
 const FOCUS = ['XAU/USD', 'DXY'];
 const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
-  configEditing: false, lessons: [], history: [], currentPlan: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
+  configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
+  monitor: null, broker: null, backtest: null, paperOrders: [],
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
 };
@@ -748,6 +749,7 @@ async function decidePlan(decision) {
     decision,
     decided_at: new Date().toISOString(),
   };
+  state.planDecision = decision;
   $('planStatus').textContent = decision === 'approved' ? 'APPROVED (PAPER)' : 'REJECTED';
   $('planActions').hidden = true;
   state.history.push({ role: 'user', content: `Plan ${state.selected}: ${decision}. Tiada execution sebenar.` });
@@ -757,6 +759,148 @@ async function decidePlan(decision) {
     try { await window.SupabaseMemory.savePlan(plan); }
     catch { setAuthStatus('Plan direkod dalam sesi; cloud audit tidak dapat disimpan.'); }
   }
+}
+
+async function agentRequest(path, options = {}) {
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  return data;
+}
+
+function agentPrice(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? fmtPrice(number) : '—';
+}
+
+function renderAgent() {
+  if (!$('monitorStatus')) return;
+  const monitor = state.monitor || {};
+  const rules = Array.isArray(monitor.rules) ? monitor.rules : [];
+  const events = Array.isArray(monitor.events) ? monitor.events : [];
+  const lastRun = monitor.lastRunAt ? new Date(monitor.lastRunAt).toLocaleTimeString() : 'not run yet';
+  $('monitorStatus').textContent = `Every ${monitor.intervalSeconds || 60}s · ${rules.length} rule(s) · ${lastRun}`;
+  $('monitorEvents').innerHTML = events.length ? events.map(event => `
+    <div class="agent-event ${escapeHtml(String(event.type || ''))}">
+      <strong>${escapeHtml(String(event.symbol || ''))}</strong> ${escapeHtml(String(event.reason || event.type || ''))}
+      ${event.at ? `<br />${escapeHtml(new Date(event.at).toLocaleTimeString())}` : ''}
+    </div>`).join('') : '<div class="agent-event">No monitor events yet.</div>';
+
+  const backtest = state.backtest;
+  if (!backtest) {
+    $('backtestResult').textContent = 'Uses the selected chart series.';
+  } else if (backtest.insufficient) {
+    $('backtestResult').textContent = `Need ${backtest.required} points; got ${backtest.points}.`;
+  } else {
+    $('backtestResult').innerHTML = `
+      <div>SMA ${backtest.fast}/${backtest.slow} · ${backtest.tradeCount} trades · win ${backtest.winRate}%</div>
+      <div>Return ${backtest.totalReturnPct}% · max drawdown ${backtest.maxDrawdownPct}%</div>
+      <div>Educational simulation only.</div>`;
+  }
+
+  $('brokerMode').textContent = state.broker?.liveOrdersEnabled ? 'LIVE DISABLED' : 'PAPER';
+  const orders = state.paperOrders.slice(0, 10);
+  $('paperOrders').innerHTML = orders.length ? orders.map(order => {
+    const payload = order.payload && typeof order.payload === 'object' ? order.payload : order;
+    const evaluation = order.evaluation || {};
+    return `<div class="paper-order ${escapeHtml(String(order.status || payload.status || 'simulated'))}">
+      <strong>${escapeHtml(String(payload.symbol || order.symbol || ''))}</strong> ${escapeHtml(String(payload.side || order.side || ''))}
+      · entry ${agentPrice(payload.entry ?? order.entry)} · ${escapeHtml(String(payload.status || order.status || 'simulated'))}
+      ${evaluation.outcome ? `<br />${escapeHtml(String(evaluation.outcome))} · pnl ${escapeHtml(String(evaluation.pnl ?? 0))}` : ''}
+    </div>`;
+  }).join('') : '<div class="paper-order">No paper orders yet.</div>';
+}
+
+async function loadPaperOrders() {
+  if (!window.SupabaseMemory?.enabled || !state.userKey) return;
+  try {
+    const result = await window.SupabaseMemory.loadPaperOrders(20);
+    state.paperOrders = Array.isArray(result.data) ? result.data : [];
+    renderAgent();
+  } catch {
+    setAuthStatus('Paper order history could not be loaded. Check the Supabase migration and RLS policies.');
+  }
+}
+
+async function loadAgentState() {
+  try {
+    const [monitor, broker] = await Promise.all([
+      agentRequest('/api/monitor'),
+      agentRequest('/api/broker/status'),
+    ]);
+    state.monitor = monitor;
+    state.broker = broker;
+    renderAgent();
+    await loadPaperOrders();
+  } catch {
+    $('monitorStatus').textContent = 'Agent APIs unavailable.';
+  }
+}
+
+async function runAgentMonitor() {
+  const btn = $('runMonitorBtn');
+  btn.disabled = true;
+  try {
+    state.monitor = await agentRequest('/api/monitor/run', { method: 'POST' });
+    renderAgent();
+    audit('agent_monitor_run', 'agent', { events: state.monitor.events?.length || 0 });
+  } catch (error) {
+    $('monitorEvents').innerHTML = `<div class="agent-event anomaly">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function runAgentBacktest() {
+  const btn = $('backtestBtn');
+  btn.disabled = true;
+  try {
+    const series = seriesForTimeframe(current()).map(Number).filter(Number.isFinite);
+    state.backtest = await agentRequest('/api/backtest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: state.selected, series, fast: 20, slow: 50, feePct: 0.05 }),
+    });
+    renderAgent();
+    audit('agent_backtest_run', 'agent', { symbol: state.selected, points: series.length });
+  } catch (error) {
+    $('backtestResult').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function executeAgentPaperOrder() {
+  const btn = $('executePaperBtn');
+  btn.disabled = true;
+  try {
+    if (!state.currentPlan || state.planDecision !== 'approved') {
+      throw new Error('Generate and approve a paper plan first.');
+    }
+    const plan = { ...state.currentPlan.plan, symbol: state.selected };
+    const order = await agentRequest('/api/paper/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan,
+        risk: state.currentPlan.risk,
+        context: buildAIContext(),
+        confirmation: $('paperConfirm').value.trim(),
+      }),
+    });
+    const evaluation = await agentRequest('/api/paper/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order, price: current().price }),
+    });
+    order.evaluation = evaluation;
+    state.paperOrders = [order, ...state.paperOrders].slice(0, 30);
+    $('paperConfirm').value = '';
+    renderAgent();
+    audit('agent_paper_order', 'agent', { orderId: order.id, symbol: order.symbol, outcome: evaluation.outcome });
+    if (window.SupabaseMemory?.enabled) {
+      window.SupabaseMemory.savePaperOrder(order).catch(() => {});
+      window.SupabaseMemory.saveEvaluation(evaluation).catch(() => {});
+    }
+  } catch (error) {
+    $('paperOrders').innerHTML = `<div class="agent-event anomaly">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
 }
 
 async function initChat() {
@@ -893,6 +1037,7 @@ async function finishSignIn() {
   await persistProfile();
   await loadAlerts();
   renderAlerts();
+  await loadPaperOrders();
   try {
     await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
   } catch { setAuthStatus('Signed in. Watchlist could not be synced; check the Supabase migration and RLS policies.'); }
@@ -1011,6 +1156,7 @@ async function refreshLongbridgeQuotes() {
 
 function resetPlan() {
   state.currentPlan = null;
+  state.planDecision = null;
   $('planStatus').textContent = 'Paper only';
   $('planStatus').classList.remove('warn');
   $('planBody').innerHTML = '<p class="muted">Tiada cadangan lagi. Pilih XAU/USD atau DXY, tekan “AI Trade Plan”.</p>';
@@ -1019,7 +1165,7 @@ function resetPlan() {
   $('rejectPlanBtn').disabled = false;
 }
 
-function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderNews(); renderCalendar(); drawChart(); }
+function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderNews(); renderCalendar(); drawChart(); renderAgent(); }
 
 async function persistProfile() {
   if (!window.SupabaseMemory?.enabled) return;
@@ -1039,6 +1185,9 @@ function bind() {
   $('approvePlanBtn').addEventListener('click', () => decidePlan('approved'));
   $('rejectPlanBtn').addEventListener('click', () => decidePlan('rejected'));
   $('alertForm').addEventListener('submit', addAlert);
+  $('runMonitorBtn').addEventListener('click', runAgentMonitor);
+  $('backtestBtn').addEventListener('click', runAgentBacktest);
+  $('executePaperBtn').addEventListener('click', executeAgentPaperOrder);
   $('configEditBtn').addEventListener('click', openConfig);
   $('configForm').addEventListener('submit', event => { event.preventDefault(); applyConfigFromForm(false); });
   $('configTestBtn').addEventListener('click', () => applyConfigFromForm(true));
@@ -1051,7 +1200,9 @@ function bind() {
     try { await window.SupabaseMemory.signOut(); } catch {}
     state.userKey = null;
     state.alerts = [];
+    state.paperOrders = [];
     renderAlerts();
+    renderAgent();
     updateAuthUI();
     await initChat();
   });
@@ -1074,6 +1225,7 @@ async function boot() {
   await initChat();
   await loadAlerts();
   renderAlerts();
+  await loadAgentState();
   refreshMarketData();
   if (window.SupabaseMemory?.enabled) {
     state.memoryReady = true;

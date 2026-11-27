@@ -23,6 +23,7 @@
         <a href="#ai"><span class="nav-index">04</span>AI Assistant</a>
         <a href="#alerts"><span class="nav-index">05</span>Alerts</a>
         <a href="#calendar"><span class="nav-index">06</span>Calendar</a>
+        <a href="#agent"><span class="nav-index">07</span>Agent Lab</a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -188,6 +189,33 @@
           </div>
           <div id="calendarList" class="calendar-list"></div>
           <p class="disclaimer">Times are UTC. Events are illustrative until a calendar data provider is connected.</p>
+        </article>
+
+        <article class="panel agent-panel" id="agent">
+          <div class="panel-head">
+            <h3>Agent Lab</h3>
+            <span class="badge warn" id="brokerMode">PAPER</span>
+          </div>
+          <div class="agent-grid">
+            <section class="agent-block">
+              <h4>Monitor</h4>
+              <div id="monitorStatus" class="agent-status">Loading…</div>
+              <div id="monitorEvents" class="agent-events"></div>
+              <button id="runMonitorBtn" type="button">Run monitor cycle</button>
+            </section>
+            <section class="agent-block">
+              <h4>Educational backtest</h4>
+              <button id="backtestBtn" type="button">Run SMA cross</button>
+              <div id="backtestResult" class="agent-result">Uses the selected chart series.</div>
+            </section>
+            <section class="agent-block">
+              <h4>Paper execution</h4>
+              <input id="paperConfirm" type="text" placeholder="Type EXECUTE PAPER" autocomplete="off" aria-label="Paper execution confirmation" />
+              <button id="executePaperBtn" type="button">Simulate order</button>
+              <div id="paperOrders" class="paper-orders"></div>
+            </section>
+          </div>
+          <p class="disclaimer">No broker order is placed. Live execution adapters are scaffolded but disabled.</p>
         </article>
       </section>
 

@@ -261,5 +261,50 @@
       const data = await authorizedFetch(`${restUrl}/audit_logs${query}`);
       return { ok: true, data: Array.isArray(data) ? data : [] };
     },
+    async savePaperOrder(order) {
+      if (!session?.user?.id || !order?.id) return { ok: false, skipped: true };
+      return post('/paper_orders', {
+        user_key: session.user.id,
+        order_ref: String(order.id),
+        symbol: order.symbol,
+        side: order.side,
+        payload: order,
+        status: order.status || 'simulated',
+        executed_at: order.executedAt || new Date().toISOString(),
+      });
+    },
+    async updatePaperOrder(orderRef, values) {
+      if (!session?.user?.id || !orderRef) return { ok: false, skipped: true };
+      const allowed = {};
+      for (const key of ['status', 'pnl', 'outcome']) {
+        if (values?.[key] != null) allowed[key] = values[key];
+      }
+      return update(`/paper_orders?order_ref=eq.${encodeURIComponent(orderRef)}`, allowed);
+    },
+    async loadPaperOrders(limit = 30) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const size = Math.min(Math.max(Number(limit) || 30, 1), 100);
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=order_ref,symbol,side,payload,status,pnl,outcome,executed_at&order=created_at.desc&limit=${size}`;
+      const data = await authorizedFetch(`${restUrl}/paper_orders${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
+    async saveEvaluation(evaluation) {
+      if (!session?.user?.id || !evaluation?.symbol) return { ok: false, skipped: true };
+      return post('/ai_evaluations', {
+        user_key: session.user.id,
+        order_ref: evaluation.orderId ? String(evaluation.orderId) : null,
+        symbol: evaluation.symbol,
+        rating: evaluation.rating ?? null,
+        note: evaluation.note ? String(evaluation.note).slice(0, 500) : null,
+        payload: evaluation && typeof evaluation === 'object' ? evaluation : {},
+      });
+    },
+    async loadEvaluations(limit = 30) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const size = Math.min(Math.max(Number(limit) || 30, 1), 100);
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=order_ref,symbol,rating,note,payload,created_at&order=created_at.desc&limit=${size}`;
+      const data = await authorizedFetch(`${restUrl}/ai_evaluations${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
   };
 })();

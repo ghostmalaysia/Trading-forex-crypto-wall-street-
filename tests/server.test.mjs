@@ -64,6 +64,7 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
       LONGBRIDGE_BIN: '/bin/false',
       MARKET_DATA_BASE_URL: `http://127.0.0.1:${stubPort}`,
       AUDIT_LOG_FILE: auditFile,
+      MONITOR_DISABLED: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -108,6 +109,53 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(ai.risk.decision, 'pending_human_approval');
     assert.equal(ai.risk.paperOnly, true);
 
+    const broker = await (await fetch(`${base}/api/broker/status`)).json();
+    assert.equal(broker.liveOrdersEnabled, false);
+    assert.equal(broker.capabilities.paperOrders, true);
+
+    const rulesResponse = await fetch(`${base}/api/monitor/rules`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rules: [{ symbol: 'XAU/USD', condition: '>=', threshold: 100 }] }),
+    });
+    assert.equal(rulesResponse.status, 200);
+    const monitorRun = await (await fetch(`${base}/api/monitor/run`, { method: 'POST' })).json();
+    assert.ok(monitorRun.events.some(event => event.type === 'threshold'));
+    assert.equal(monitorRun.paperOnly, true);
+
+    const backtestResponse = await fetch(`${base}/api/backtest`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ symbol: 'XAU/USD', series: rising, fast: 5, slow: 20 }),
+    });
+    assert.equal(backtestResponse.status, 200);
+    assert.equal((await backtestResponse.json()).educational, true);
+
+    const paperResponse = await fetch(`${base}/api/paper/order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ plan: ai.plan, risk: ai.risk, context, confirmation: 'EXECUTE PAPER' }),
+    });
+    assert.equal(paperResponse.status, 200);
+    const order = await paperResponse.json();
+    assert.equal(order.status, 'simulated');
+    assert.equal(order.paperOnly, true);
+
+    const rejectedPaper = await fetch(`${base}/api/paper/order`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ plan: ai.plan, risk: ai.risk, context, confirmation: 'WRONG' }),
+    });
+    assert.equal(rejectedPaper.status, 400);
+
+    const evaluationResponse = await fetch(`${base}/api/paper/evaluate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ order, price: order.takeProfit }),
+    });
+    assert.equal(evaluationResponse.status, 200);
+    assert.equal((await evaluationResponse.json()).outcome, 'take_profit');
+
     const invalid = await fetch(`${base}/api/ai`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
     assert.equal(invalid.status, 400);
 
@@ -120,6 +168,9 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     const audit = await readFile(auditFile, 'utf8');
     assert.match(audit, /"event":"market_snapshot"/);
     assert.match(audit, /"event":"ai_request"/);
+    assert.match(audit, /"event":"monitor_event"/);
+    assert.match(audit, /"event":"backtest_run"/);
+    assert.match(audit, /"event":"paper_order_simulated"/);
   } finally {
     child.kill('SIGTERM');
     await new Promise(resolve => {

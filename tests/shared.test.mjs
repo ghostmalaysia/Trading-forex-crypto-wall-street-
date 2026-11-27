@@ -23,20 +23,37 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
   assert.equal((await client.market()).ok, true);
   assert.deepEqual((await client.news()).focus, ['XAU/USD', 'DXY']);
   await client.askAi('Bina plan', 'plan', { selected: 'XAU/USD' });
+  await client.monitor();
+  await client.brokerStatus();
+  await client.runMonitor();
+  await client.setMonitorRules([{ symbol: 'XAU/USD', condition: '>=', threshold: 1 }]);
+  await client.backtest({ series: [1, 2, 3] });
+  await client.paperOrder({ confirmation: 'EXECUTE PAPER' });
+  await client.evaluatePaperOrder({ order: {}, price: 1 });
 
   assert.deepEqual(calls.map(call => call.url), [
     'https://trade.example/api/health',
     'https://trade.example/api/market',
     'https://trade.example/api/news',
     'https://trade.example/api/ai',
+    'https://trade.example/api/monitor',
+    'https://trade.example/api/broker/status',
+    'https://trade.example/api/monitor/run',
+    'https://trade.example/api/monitor/rules',
+    'https://trade.example/api/backtest',
+    'https://trade.example/api/paper/order',
+    'https://trade.example/api/paper/evaluate',
   ]);
-  const aiCall = calls.at(-1);
+  const aiCall = calls[3];
   assert.equal(aiCall.options.method, 'POST');
   assert.equal(aiCall.options.headers['Content-Type'], 'application/json');
   assert.deepEqual(JSON.parse(aiCall.options.body), {
     message: 'Bina plan',
     mode: 'plan',
     context: { selected: 'XAU/USD' },
+  });
+  assert.deepEqual(JSON.parse(calls[7].options.body), {
+    rules: [{ symbol: 'XAU/USD', condition: '>=', threshold: 1 }],
   });
 });
 

@@ -24,6 +24,25 @@ export function createApiClient({ baseUrl, fetchImpl = fetch } = {}) {
     health: () => request('/api/health'),
     market: () => request('/api/market'),
     news: () => request('/api/news'),
+    monitor: () => request('/api/monitor'),
+    brokerStatus: () => request('/api/broker/status'),
+    runMonitor: () => request('/api/monitor/run', { method: 'POST' }),
+    setMonitorRules: rules => request('/api/monitor/rules', {
+      method: 'POST',
+      body: JSON.stringify({ rules }),
+    }),
+    backtest: input => request('/api/backtest', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    paperOrder: input => request('/api/paper/order', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    evaluatePaperOrder: input => request('/api/paper/evaluate', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
     askAi: (message, mode, context) => request('/api/ai', {
       method: 'POST',
       body: JSON.stringify({ message, mode, context }),

@@ -78,8 +78,9 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 | Charts | Interactive price charts | Basic candlestick/line |
 | News | Market headlines, filtering | Mock/RSS adapter |
 | Watchlist/Alerts | Track assets, thresholds | Basic watchlist |
-| AI Assistant | Chat, summaries, monitoring | Rule-based + provider stub |
-| Mobile Shell | Shared navigation and screens | Planned scaffold |
+| AI Assistant | Chat, summaries, monitoring | Rule-based fallback + Groq provider |
+| Agent Workflows | Monitor rules, anomaly detection, backtests, paper execution | Safe paper-only modules and audit events |
+| Mobile Shell | Shared navigation and screens | Expo app with dashboard, news, AI, and agent screens |
 
 ## Data Flow
 1. **Ingestion** pulls market/news data from free providers.
@@ -88,6 +89,7 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 4. **UI** renders charts/news/watchlist via BFF endpoints.
 5. **AI** consumes normalized data + user context to generate insights/alerts.
 6. **Feedback loop** records user actions and AI outcome ratings.
+7. **Agent workflows** evaluate monitor rules/anomalies on a server interval, run educational backtests, simulate fills with explicit confirmation, and audit every action.
 
 ## Security & Compliance Notes
 - No secrets in repo; use `.env.local`.

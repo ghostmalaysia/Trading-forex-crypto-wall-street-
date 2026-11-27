@@ -8,7 +8,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `web/` - runnable static MVP dashboard (no build required)
 - `mobile/` - Expo app scaffold consuming the same Node APIs
 - `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs)
-- `tests/` - automated AI, HTTP, shared client, and mobile cloud client tests
+- `ai/` - AI prompt/provider/plan modules plus safe agent modules (monitor, backtest, execution, broker)
+- `tests/` - automated AI, HTTP, agent, shared client, and mobile cloud client tests
 - `shared/` - API client and curated feed data shared by server and mobile
 - `docs/` - product notes, references, and integration plan
 - `Dockerfile` / `docker-compose.yml` - container deployment config
@@ -26,9 +27,11 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - AI trade plans with risk gate (1% cap, R:R, exposure, fresh data) and human approval in paper mode
 - Feedback buttons feed per-user AI learning in Supabase
 - Append-only audit logs for AI requests, plan decisions, feedback, and alerts
+- Agent Lab: background monitor rules/anomaly events, educational SMA-cross backtest, paper order simulation, evaluation feedback, and broker status
+- Server-side monitor interval with audit events for monitor, backtest, paper order, and evaluation actions
 - Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
-- Expo mobile app with shared API client, five core screens, Supabase sync, and local alert notifications
+- Expo mobile app with shared API client, six core screens, Supabase sync, and local alert notifications
 - Working in-page navigation and keyboard-accessible watchlist selection
 - Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
 - Optional Longbridge live quotes for US stocks through a local, read-only Node.js bridge
@@ -66,7 +69,15 @@ Set `GROQ_API_KEY` in the server environment to enable a live Groq model:
 GROQ_API_KEY=your_key GROQ_MODEL=openai/gpt-oss-20b node server.mjs
 ```
 
-Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql) and [`supabase/migrations/202611270002_audit_logs.sql`](supabase/migrations/202611270002_audit_logs.sql) for existing projects, or use `supabase/schema.sql` for fresh ones. The Node server also appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`).
+Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql), [`supabase/migrations/202611270002_audit_logs.sql`](supabase/migrations/202611270002_audit_logs.sql), and [`supabase/migrations/202611280001_agent_workflows.sql`](supabase/migrations/202611280001_agent_workflows.sql) for existing projects, or use `supabase/schema.sql` for fresh ones. The Node server also appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`).
+
+## Agent workflows (paper-only)
+
+The Agent Lab adds `GET /api/monitor`, `POST /api/monitor/rules`, `POST /api/monitor/run`, `POST /api/backtest`, `GET /api/broker/status`, `POST /api/paper/order`, and `POST /api/paper/evaluate`. Rule evaluation and anomaly detection run on a server interval and are limited to XAU/USD and DXY. Backtests are educational simulations, not predictive research.
+
+Paper execution only accepts an approved plan and the exact confirmation string `EXECUTE PAPER`. `POST /api/paper/order` simulates slippage and returns a `paperOnly` order; `POST /api/paper/evaluate` reports outcome and PnL. Signed-in users can persist orders in `paper_orders` and feedback in `ai_evaluations`. Broker adapters are scaffolded for MetaApi/MT5 later, but `liveOrdersEnabled` is always `false`.
+
+Configure with `MONITOR_RULES` (JSON array), `MONITOR_INTERVAL_SECONDS` (minimum 30), `MONITOR_ZSCORE`, `METAAPI_TOKEN`, `METAAPI_ACCOUNT_ID`, and `ENABLE_LIVE_TRADING`. Live order requests are rejected; `GROQ_API_KEY` remains server-side only.
 
 ## Testing
 
@@ -74,7 +85,7 @@ Without a key, the server returns a clearly labelled local fallback. The key is 
 npm test
 ```
 
-Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, health/market/AI endpoints, static serving, path traversal rejection, and audit-log creation. The HTTP test starts a local stub market feed, so it does not require internet access.
+Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, health/market/news/agent/AI endpoints, static serving, path traversal rejection, shared API client, and audit-log creation. The HTTP test starts a local stub market feed, so it does not require internet access.
 
 ## Deployment
 
@@ -88,7 +99,7 @@ The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume fo
 
 ## Mobile app
 
-`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, and `/api/ai`. Supabase Auth, preferences, watchlist, and chat sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
+`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, and `/api/broker/status`. Supabase Auth, preferences, watchlist, chat, paper orders, and evaluations sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
 
 ```bash
 cd mobile
@@ -134,7 +145,8 @@ Build a platform/dashboard for web and Android/iOS that includes:
 ## Safety
 - AI output is informational only, **not financial advice**.
 - No automated trading/execution in MVP; AI plans are paper-only and require explicit human approval.
+- Agent Lab simulations require `EXECUTE PAPER`; broker adapters never place live orders in this build.
 - Any future automation must be permissioned and confirm-before-execute.
 
 ## Next Steps
-See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–3 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, and the mobile app; broker automation and remote push tokens remain out of scope for the MVP.
+See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–4 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, and the mobile app; live broker automation and remote push tokens remain out of scope for the MVP.
