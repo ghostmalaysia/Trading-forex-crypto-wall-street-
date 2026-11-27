@@ -3,6 +3,7 @@
 ## Existing Open-Source Projects
 - **[OpenBB](https://github.com/OpenBB-finance/OpenBB)** (75k+ stars, AGPL/Other) - Open data platform for analysts, quants, and AI agents. Strong reference for market data APIs, financial analytics, and AI integration patterns.
 - **[Superalgos](https://github.com/Superalgos/Superalgos)** (5.8k stars, Apache-2.0) - Open-source crypto trading bot/platform with visual strategy design, backtesting, paper trading. Reference for automation and agent workflows.
+- **[NOFX](https://github.com/NoFxAiOS/nofx)** (AGPL-3.0) - Reference for multi-agent decision flow, risk gates, human approval, adapters, and audit trails. Borrow patterns only; do not copy source into TradeWall.
 
 ## Product/UX Benchmark
 - **[TradingView](https://www.tradingview.com/)** - feature/UX benchmark for trading dashboard: advanced charts, screeners, heatmaps, watchlists, alerts, news/calendar, paper trading, broker integration, community ideas/scripts. TradeWall target: deliver equivalent core toolkit free on web/mobile using open/free stack.

@@ -62,11 +62,21 @@ create table if not exists public.trade_plans (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  action text not null,
+  entity text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_watchlists_user_key on public.watchlists(user_key);
 create index if not exists idx_ai_memory_user_key_created on public.ai_memory(user_key, created_at desc);
 create index if not exists idx_alerts_user_key_active on public.alerts(user_key, active);
 create index if not exists idx_ai_learning_user_key_created on public.ai_learning(user_key, created_at desc);
 create index if not exists idx_trade_plans_user_key_created on public.trade_plans(user_key, created_at desc);
+create index if not exists idx_audit_logs_user_key_created on public.audit_logs(user_key, created_at desc);
 
 -- Authenticated users can access only rows whose user_key matches their Auth UUID.
 alter table public.user_profiles enable row level security;
@@ -75,6 +85,7 @@ alter table public.ai_memory enable row level security;
 alter table public.alerts enable row level security;
 alter table public.ai_learning enable row level security;
 alter table public.trade_plans enable row level security;
+alter table public.audit_logs enable row level security;
 
 drop policy if exists "anon_profiles_mvp" on public.user_profiles;
 drop policy if exists "anon_watchlists_mvp" on public.watchlists;
@@ -86,6 +97,7 @@ drop policy if exists "ai_memory_own_rows" on public.ai_memory;
 drop policy if exists "alerts_own_rows" on public.alerts;
 drop policy if exists "ai_learning_own_rows" on public.ai_learning;
 drop policy if exists "trade_plans_own_rows" on public.trade_plans;
+drop policy if exists "audit_logs_own_rows" on public.audit_logs;
 
 create policy "profiles_own_rows" on public.user_profiles
   for all to authenticated using ((select auth.uid())::text = user_key)
@@ -105,6 +117,9 @@ create policy "ai_learning_own_rows" on public.ai_learning
 create policy "trade_plans_own_rows" on public.trade_plans
   for all to authenticated using ((select auth.uid())::text = user_key)
   with check ((select auth.uid())::text = user_key);
+create policy "audit_logs_own_rows" on public.audit_logs
+  for all to authenticated using ((select auth.uid())::text = user_key)
+  with check ((select auth.uid())::text = user_key);
 
-revoke all privileges on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans from anon;
-grant select, insert, update, delete on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans to authenticated;
+revoke all privileges on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs from anon;
+grant select, insert, update, delete on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs to authenticated;

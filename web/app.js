@@ -194,6 +194,7 @@ async function addAlert(event) {
   state.alerts.unshift(alert);
   $('alertThreshold').value = '';
   renderAlerts();
+  audit('alert_created', 'alert', { symbol, condition, threshold });
   if (window.SupabaseMemory?.enabled) {
     try {
       const result = await window.SupabaseMemory.saveAlert(alert);
@@ -225,6 +226,7 @@ function checkAlerts() {
     alert.active = false;
     alert.triggeredAt = new Date().toISOString();
     showAlertToast(`${alert.symbol} ${alert.condition === '>=' ? '≥' : '≤'} ${fmtPrice(alert.threshold)} — alert triggered. No order placed.`);
+    audit('alert_triggered', 'alert', { symbol: alert.symbol, condition: alert.condition, threshold: alert.threshold, price: MARKET.find(m => m.symbol === alert.symbol)?.price });
     if (window.SupabaseMemory?.enabled && alert.id && !String(alert.id).startsWith('local-')) {
       window.SupabaseMemory.triggerAlert(alert.id).catch(() => {});
     }
@@ -708,6 +710,7 @@ async function rateMessage(index, rating) {
   const insight = `${item.role}: ${item.content.slice(0, 240)}`;
   state.lessons.unshift({ insight, rating });
   state.lessons = state.lessons.slice(0, 20);
+  audit('ai_feedback', 'lesson', { rating, role: item.role });
   if (window.SupabaseMemory?.enabled) {
     try { await window.SupabaseMemory.saveLesson(insight, 'feedback', rating); }
     catch { setAuthStatus('Feedback saved for this session; cloud learning could not be saved.'); }
@@ -725,6 +728,7 @@ async function submitPlan() {
     const data = await askAI('Bina cadangan paper trading untuk simbol ini berdasarkan graf semasa.', 'plan');
     state.currentPlan = data;
     renderPlan(data);
+    audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
     const index = state.history.push({ role: 'ai', content: data.reply || 'AI plan generated.' }) - 1;
     addMsg('ai', data.reply || 'AI plan generated.', index);
     if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply || 'AI plan generated.');
@@ -748,6 +752,7 @@ async function decidePlan(decision) {
   $('planActions').hidden = true;
   state.history.push({ role: 'user', content: `Plan ${state.selected}: ${decision}. Tiada execution sebenar.` });
   addMsg('user', `Plan ${state.selected}: ${decision}. Tiada execution sebenar.`);
+  audit('ai_plan_decided', 'plan', { symbol: state.selected, decision, provider: state.currentPlan?.provider });
   if (window.SupabaseMemory?.enabled) {
     try { await window.SupabaseMemory.savePlan(plan); }
     catch { setAuthStatus('Plan direkod dalam sesi; cloud audit tidak dapat disimpan.'); }
@@ -785,7 +790,11 @@ async function initChat() {
     try {
       const mode = /cadangan|plan|trade plan/i.test(text) ? 'plan' : 'chat';
       const data = await askAI(text, mode);
-      if (mode === 'plan' && data.plan) { state.currentPlan = data; renderPlan(data); }
+      if (mode === 'plan' && data.plan) {
+        state.currentPlan = data;
+        renderPlan(data);
+        audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
+      }
       const aiIndex = state.history.push({ role: 'ai', content: data.reply }) - 1;
       addMsg('ai', data.reply, aiIndex);
       if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply);
@@ -795,6 +804,11 @@ async function initChat() {
       addMsg('ai', reply, aiIndex);
     }
   });
+}
+
+function audit(action, entity, payload = {}) {
+  if (!window.SupabaseMemory?.enabled || !state.userKey) return;
+  window.SupabaseMemory.saveAudit(action, entity, payload).catch(() => {});
 }
 
 function setAuthStatus(message) {

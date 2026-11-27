@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { extname, resolve, sep } from 'node:path';
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.mjs';
 import { complete, providerName, modelName } from './ai/provider.mjs';
@@ -10,7 +11,7 @@ import { analyzeChart, normalizePlan, riskGate } from './ai/plan.mjs';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
 const port = Number(process.env.PORT || 8080);
-const host = '127.0.0.1';
+const host = process.env.HOST || '127.0.0.1';
 const pending = new Map();
 const aiHits = new Map();
 const marketTargets = {
@@ -18,6 +19,7 @@ const marketTargets = {
   DXY: { providerSymbol: 'DX-Y.NYB', label: 'US Dollar Index' },
 };
 const marketCache = { payload: null, fetchedAt: 0 };
+const auditFile = process.env.AUDIT_LOG_FILE || resolve(root, 'data', 'audit.jsonl');
 let rpcId = 0;
 let rpcProcess;
 let rpcBuffer = '';
@@ -55,6 +57,15 @@ function startLongbridge() {
     rpcReady = false;
     rpcError = `Unable to start Longbridge: ${error.message}`;
   });
+  rpcProcess.stdin.on('error', error => {
+    rpcReady = false;
+    rpcError = `Longbridge bridge unavailable: ${error.message}`;
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error(rpcError));
+    }
+    pending.clear();
+  });
   rpcProcess.on('exit', code => {
     rpcReady = false;
     rpcError = `Longbridge process exited${code == null ? '' : ` (${code})`}`;
@@ -67,7 +78,7 @@ function startLongbridge() {
 }
 
 function rpc(method, params = {}) {
-  if (!rpcProcess?.stdin?.writable) return Promise.reject(new Error(rpcError));
+  if (!rpcProcess?.stdin?.writable || rpcProcess.exitCode !== null) return Promise.reject(new Error(rpcError || 'Longbridge unavailable'));
   const id = ++rpcId;
   return new Promise((resolveRpc, rejectRpc) => {
     const timer = setTimeout(() => {
@@ -83,6 +94,19 @@ function rpc(method, params = {}) {
       }
     });
   });
+}
+
+async function appendAudit(event, detail = {}) {
+  try {
+    await mkdir(dirname(auditFile), { recursive: true });
+    const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...detail })}\n`;
+    await appendFile(auditFile, line);
+  } catch {}
+}
+
+function clientHash(req) {
+  const value = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'local';
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 function sendJson(res, status, value) {
@@ -212,16 +236,19 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/market') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-    return sendJson(res, 200, await marketSnapshot());
+    const snapshot = await marketSnapshot();
+    await appendAudit('market_snapshot', { provider: snapshot.provider, symbols: snapshot.items.map(item => item.symbol) });
+    return sendJson(res, 200, snapshot);
   }
   if (url.pathname === '/api/ai') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
-    const client = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'local';
+    const clientKey = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'local';
+    const client = clientHash(req);
     const now = Date.now();
-    const hits = (aiHits.get(client) || []).filter(time => now - time < 60000);
+    const hits = (aiHits.get(clientKey) || []).filter(time => now - time < 60000);
     if (hits.length >= 20) return sendJson(res, 429, { error: 'Too many AI requests. Try again shortly.' });
     hits.push(now);
-    aiHits.set(client, hits);
+    aiHits.set(clientKey, hits);
     let payload;
     try { payload = JSON.parse(await readBody(req)); }
     catch (error) { return sendJson(res, 400, { error: error.message === 'Request body too large' ? error.message : 'Invalid JSON body' }); }
@@ -248,8 +275,19 @@ async function handle(req, res) {
           ? `${plan.rationale}\n\n${result.reply}`
           : `Cadangan ${plan.bias} untuk ${context.selected || analysis.symbol}: entry ${plan.entry}, SL ${plan.stopLoss}, TP ${plan.takeProfit}, risiko ${plan.riskPct}%. Semakan risiko: ${risk.decision}. Kelulusan manusia diperlukan; paper sahaja.\n\n${result.reply}`;
       }
+      await appendAudit('ai_request', {
+        client,
+        mode,
+        provider: result.provider,
+        model: result.model,
+        symbol: context.selected || analysis.symbol || null,
+        decision: response.risk?.decision || null,
+      });
       return sendJson(res, 200, response);
-    } catch (error) { return sendJson(res, 502, { error: error.message }); }
+    } catch (error) {
+      await appendAudit('ai_error', { client, mode, error: error.message.slice(0, 200) });
+      return sendJson(res, 502, { error: error.message });
+    }
   }
   if (url.pathname === '/api/quotes') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

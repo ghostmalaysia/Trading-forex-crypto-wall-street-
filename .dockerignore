@@ -1,0 +1,11 @@
+.git
+.gitignore
+data
+node_modules
+coverage
+.env
+.env.*
+!.env.example
+web/supabase-config.js
+tests
+mobile

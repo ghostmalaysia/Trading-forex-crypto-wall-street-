@@ -6,8 +6,11 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `ARCHITECTURE.md` - system design, stack, modules, data flow
 - `ROADMAP.md` - phased delivery plan
 - `web/` - runnable static MVP dashboard (no build required)
-- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade-plan audit)
+- `mobile/` - Expo app scaffold consuming the same Node APIs
+- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs)
+- `tests/` - automated AI and HTTP endpoint tests
 - `docs/` - product notes, references, and integration plan
+- `Dockerfile` / `docker-compose.yml` - container deployment config
 
 ## MVP Features (current)
 - Dark-theme trading dashboard UI
@@ -21,6 +24,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Chart-aware AI: reads the selected chart series, computes SMA/RSI/ATR/trend, and explains its view
 - AI trade plans with risk gate (1% cap, R:R, exposure, fresh data) and human approval in paper mode
 - Feedback buttons feed per-user AI learning in Supabase
+- Append-only audit logs for AI requests, plan decisions, feedback, and alerts
+- Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
 - Working in-page navigation and keyboard-accessible watchlist selection
 - Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
@@ -31,7 +36,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 No dependencies required for the static MVP:
 
 ```bash
-# from repo root (Node 18+)
+# from repo root (Node 20+)
 node server.mjs
 # open http://127.0.0.1:8080/
 ```
@@ -59,13 +64,44 @@ Set `GROQ_API_KEY` in the server environment to enable a live Groq model:
 GROQ_API_KEY=your_key GROQ_MODEL=openai/gpt-oss-20b node server.mjs
 ```
 
-Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql) for existing projects, or use `supabase/schema.sql` for fresh ones.
+Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql) and [`supabase/migrations/202611270002_audit_logs.sql`](supabase/migrations/202611270002_audit_logs.sql) for existing projects, or use `supabase/schema.sql` for fresh ones. The Node server also appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`).
+
+## Testing
+
+```bash
+npm test
+```
+
+Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, health/market/AI endpoints, static serving, path traversal rejection, and audit-log creation. The HTTP test starts a local stub market feed, so it does not require internet access.
+
+## Deployment
+
+Copy `.env.example` to `.env` and set server-side secrets there. For containers:
+
+```bash
+docker compose up --build
+```
+
+The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume for `data/audit.jsonl`, and includes a health check against `/api/health`. Docker is not required for local `node server.mjs` usage. Do not place `GROQ_API_KEY`, database secrets, or `web/supabase-config.js` in the image or browser bundle.
+
+## Mobile app
+
+`mobile/` contains an Expo scaffold that calls the same `/api/health`, `/api/market`, and `/api/ai` endpoints.
+
+```bash
+cd mobile
+npm install
+cp .env.example .env
+npm start
+```
+
+Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The mobile app is paper-only and does not place orders.
 
 ## Market data, alerts, and calendar
 
 `GET /api/market` fetches indicative quotes and daily closes for **XAU/USD** (Yahoo `GC=F` futures proxy) and **DXY** (`DX-Y.NYB`) through a server-side adapter. It caches results for 60 seconds and falls back to the simulated feed if a provider is unavailable. Override with `MARKET_DATA_BASE_URL`, `MARKET_DATA_INTERVAL`, `MARKET_DATA_RANGE`, and `MARKET_DATA_TTL_SECONDS` if you use a compatible chart endpoint or proxy.
 
-Price alerts are evaluated in the browser against XAU/USD and DXY. They notify locally and never place orders. When signed in, alerts and their triggered state are stored per user in Supabase; apply `supabase/migrations/202611270001_ai_learning_and_plans.sql` (already includes the `alerts` table from the secure-memory migration). The economic calendar is curated mock data until a calendar provider is connected.
+Price alerts are evaluated in the browser against XAU/USD and DXY. They notify locally and never place orders. When signed in, alerts and their triggered state are stored per user in Supabase; apply `supabase/migrations/202611260001_secure_user_memory.sql` for existing projects (or `supabase/schema.sql` for fresh ones). The economic calendar is curated mock data until a calendar provider is connected.
 
 ## Optional Longbridge stock quotes
 
@@ -99,4 +135,4 @@ Build a platform/dashboard for web and Android/iOS that includes:
 - Any future automation must be permissioned and confirm-before-execute.
 
 ## Next Steps
-See `ROADMAP.md` for Phase 1+ (real data adapters, persistence, AI provider integration, Expo mobile app).
+See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–2 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, and the Expo scaffold; broker automation remains out of scope for the MVP.

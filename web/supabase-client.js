@@ -245,5 +245,21 @@
       if (!session?.user?.id) return { ok: false, skipped: true };
       return remove(`/alerts?id=eq.${encodeURIComponent(id)}`);
     },
+    async saveAudit(action, entity, payload = {}) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      return post('/audit_logs', {
+        user_key: session.user.id,
+        action: String(action).slice(0, 80),
+        entity: String(entity).slice(0, 80),
+        payload: payload && typeof payload === 'object' ? payload : {},
+      });
+    },
+    async loadAudit(limit = 50) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const size = Math.min(Math.max(Number(limit) || 50, 1), 100);
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=action,entity,payload,created_at&order=created_at.desc&limit=${size}`;
+      const data = await authorizedFetch(`${restUrl}/audit_logs${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
   };
 })();

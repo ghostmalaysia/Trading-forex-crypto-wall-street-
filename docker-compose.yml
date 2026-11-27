@@ -1,0 +1,29 @@
+services:
+  tradewall:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+      NODE_ENV: production
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-}
+      MARKET_DATA_BASE_URL: ${MARKET_DATA_BASE_URL:-https://query1.finance.yahoo.com}
+      MARKET_DATA_INTERVAL: ${MARKET_DATA_INTERVAL:-1d}
+      MARKET_DATA_RANGE: ${MARKET_DATA_RANGE:-1mo}
+      MARKET_DATA_TTL_SECONDS: ${MARKET_DATA_TTL_SECONDS:-60}
+      AUDIT_LOG_FILE: /app/data/audit.jsonl
+    volumes:
+      - tradewall-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  tradewall-data:
