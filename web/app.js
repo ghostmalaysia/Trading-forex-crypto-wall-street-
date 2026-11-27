@@ -1,3 +1,5 @@
+import { detectCandlePatterns, explainCandlePatterns, toCandles } from '/shared/candle-patterns.js';
+
 const MARKET = [
   { symbol: 'EUR/USD', market: 'Forex', price: 1.0842, change: 0.42, history: seed(1.0842, 0.0008) },
   { symbol: 'GBP/USD', market: 'Forex', price: 1.2735, change: -0.18, history: seed(1.2735, 0.0011) },
@@ -33,7 +35,7 @@ const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
   monitor: null, broker: null, backtest: null, paperOrders: [], screener: null, summary: null,
-  paperAccount: null, learning: null, research: null, decisions: [],
+  paperAccount: null, learning: null, research: null, decisions: [], candle: null, news: null, scoutLastKey: '', scoutHideTimer: null,
   liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null, auditLogs: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
@@ -138,10 +140,31 @@ function renderMarketSummary() {
 }
 
 function renderNews() {
-  $('newsList').innerHTML = NEWS.map(n => {
-    const tag = n.meta.split('•')[0].trim();
-    return `<div class="news-item"><h4>${n.title}</h4><p><span class="news-tag">${tag}</span>${n.meta}</p></div>`;
+  const items = state.news?.items || NEWS;
+  $('newsList').innerHTML = items.map(n => {
+    const meta = String(n.meta || '');
+    const tag = meta.split('•')[0].trim();
+    const title = escapeHtml(n.title || '');
+    const heading = /^https?:\/\//i.test(n.url || '') ? `<a href="${escapeHtml(n.url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+    return `<div class="news-item"><h4>${heading}</h4><p><span class="news-tag">${escapeHtml(tag)}</span>${escapeHtml(meta)}</p></div>`;
   }).join('');
+}
+
+async function loadNews() {
+  try {
+    const response = await fetch('/api/news', { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'News feed unavailable');
+    state.news = payload;
+    $('newsProvider').textContent = payload.provider === 'curated-mock'
+      ? 'Curated mock headlines'
+      : payload.provider === 'curated-fallback'
+        ? 'Curated fallback • feed unavailable'
+        : `Live ${payload.provider} feed`;
+    renderNews();
+  } catch {
+    state.news = null;
+  }
 }
 
 function renderControls() {
@@ -393,8 +416,9 @@ function drawChart() {
   const end = Math.max(count, total - state.viewOffset);
   const start = Math.max(0, end - count);
   const data = all.slice(start, end);
-  const rawLow = Math.min(...data);
-  const rawHigh = Math.max(...data);
+  const candles = toCandles(all).slice(start, end);
+  const rawLow = Math.min(...candles.map(item => item.low));
+  const rawHigh = Math.max(...candles.map(item => item.high));
   const span = rawHigh - rawLow || Math.max(Math.abs(rawHigh) * 0.01, 1);
   const lo = rawLow - span * 0.08;
   const hi = rawHigh + span * 0.08;
@@ -437,17 +461,15 @@ function drawChart() {
 
   if (state.chartType === 'candle') {
     const bodyW = Math.max(2, Math.min(11, band * 0.62));
-    data.forEach((close, i) => {
-      const open = i ? data[i - 1] : close;
-      const wick = Math.max(Math.abs(close - open) * 0.4, span * 0.012);
-      const up = close >= open;
+    candles.forEach(candle => {
+      const up = candle.direction === 'bullish';
       ctx.strokeStyle = up ? '#00d68f' : '#ff4d5e';
       ctx.fillStyle = up ? '#00d68f' : '#ff4d5e';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(x(i), y(Math.max(open, close) + wick)); ctx.lineTo(x(i), y(Math.min(open, close) - wick)); ctx.stroke();
-      const top = y(Math.max(open, close));
-      const height = Math.max(1, Math.abs(y(open) - y(close)));
-      ctx.fillRect(x(i) - bodyW / 2, top, bodyW, height);
+      ctx.beginPath(); ctx.moveTo(x(candle.index), y(candle.high)); ctx.lineTo(x(candle.index), y(candle.low)); ctx.stroke();
+      const top = y(Math.max(candle.open, candle.close));
+      const height = Math.max(1, Math.abs(y(candle.open) - y(candle.close)));
+      ctx.fillRect(x(candle.index) - bodyW / 2, top, bodyW, height);
     });
   } else {
     ctx.beginPath();
@@ -691,6 +713,9 @@ function aiReply(text) {
   if (!FOCUS.includes(c.symbol)) {
     return `Fokus saya hanya XAU/USD dan DXY. Sila pilih salah satu daripada watchlist. ${c.symbol} di luar skop model ini.`;
   }
+  if (/candle|corak|doji|hammer|engulf|sumbu|marubozu|harami/i.test(t)) {
+    return state.candle?.reply || 'Saya boleh terangkan badan candle, sumbu atas/bawah, dan corak seperti doji, hammer, engulfing dan shooting star. Tekan “Terangkan Candle / Corak” untuk bacaan semasa.';
+  }
   if (t.includes('summary') || t.includes('market') || t.includes('analisis')) {
     const data = seriesForTimeframe(c);
     const sma = data.slice(-20).reduce((a, b) => a + b, 0) / Math.min(data.length, 20);
@@ -849,6 +874,156 @@ async function runDecision(text) {
   } finally {
     if (button) button.disabled = false;
   }
+}
+
+function renderCandle() {
+  const body = $('candleBody');
+  if (!body || !state.candle) return;
+  const signal = state.candle.signal || {};
+  const patterns = (state.candle.patterns || []).map(item => `<div class="risk-item"><span>${escapeHtml(item.label)} · ${escapeHtml(item.bias)}</span></div>`).join('');
+  body.innerHTML = `
+    <p class="muted">Isyarat: <strong>${escapeHtml(signal.action || 'NO TRADE')}</strong> · keyakinan ${escapeHtml(signal.confidence || 'low')} · ${escapeHtml(state.candle.summary || '')}</p>
+    <div class="risk-list">${patterns || '<div class="risk-item"><span>Tiada corak klasik yang jelas.</span></div>'}</div>
+    <p>${escapeHtml(state.candle.reply || '')}</p>`;
+}
+
+function showScoutMessage(message, kind = 'NO TRADE') {
+  const bubble = $('aiScoutBubble');
+  const title = $('aiScoutTitle');
+  const text = $('aiScoutText');
+  if (!bubble || !title || !text) return;
+  title.textContent = kind === 'BUY' ? 'ISYARAT BUY' : kind === 'SELL' ? 'ISYARAT SELL' : 'AI SCOUT';
+  text.textContent = message;
+  bubble.dataset.signal = kind;
+  bubble.hidden = false;
+  clearTimeout(state.scoutHideTimer);
+  state.scoutHideTimer = setTimeout(() => { bubble.hidden = true; }, 14000);
+}
+
+function updateScout(data) {
+  const signal = data?.signal;
+  if (!signal) return;
+  const key = signal.signature || `${data.symbol}:${data.timeframe}:${signal.action}:${signal.pattern || 'none'}`;
+  if (!state.scoutLastKey) {
+    state.scoutLastKey = key;
+    showScoutMessage('AI Scout aktif. Saya memantau pergerakan candle XAU/USD dan DXY.', 'NO TRADE');
+    return;
+  }
+  if (key === state.scoutLastKey) return;
+  state.scoutLastKey = key;
+  if (signal.action !== 'BUY' && signal.action !== 'SELL') return;
+  const evidence = (data.reply || '').split('\n').find(line => line.trim().startsWith('1.')) || data.summary || signal.label;
+  showScoutMessage(`${data.symbol || state.selected} ${data.timeframe || state.timeframe}: ${signal.action} — ${evidence}`.slice(0, 240), signal.action);
+}
+
+async function loadCandleAnalysis({ announce = false } = {}) {
+  const item = current();
+  const payload = {
+    symbol: item.symbol,
+    timeframe: state.timeframe,
+    series: seriesForTimeframe(item),
+    audit: announce,
+  };
+  let data;
+  try {
+    const response = await fetch('/api/candles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Candle analysis failed');
+    data = body;
+  } catch {
+    const local = detectCandlePatterns(payload.series, { symbol: payload.symbol, timeframe: payload.timeframe });
+    data = { ...local, reply: explainCandlePatterns(local), provider: 'local', model: 'candle-rules' };
+  }
+  state.candle = data;
+  renderCandle();
+  updateScout(data);
+  if (announce) {
+    const index = state.history.push({ role: 'ai', content: data.reply || '' }) - 1;
+    addMsg('ai', data.reply || '', index);
+    if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply || '');
+  }
+  return data;
+}
+
+async function runCandle() {
+  const button = $('candleBtn');
+  if (button) button.disabled = true;
+  try {
+    const data = await loadCandleAnalysis({ announce: true });
+    audit('ai_candle_explained', 'candle', { symbol: state.selected, signal: data?.signal?.action || null });
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function initScout() {
+  const root = $('aiScout');
+  const orb = $('aiScoutOrb');
+  const close = $('aiScoutClose');
+  const bubble = $('aiScoutBubble');
+  if (!root || !orb || !bubble) return;
+  root.hidden = false;
+  const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const scout = {
+    x: window.innerWidth > 860 ? window.innerWidth - 150 : window.innerWidth - 80,
+    y: window.innerHeight - 140,
+    vx: 0.32,
+    vy: -0.18,
+    lastTurn: 0,
+    hover: false,
+  };
+  const bounds = () => {
+    const width = root.offsetWidth || 46;
+    const height = root.offsetHeight || 46;
+    const minX = window.innerWidth > 860 ? 250 : 8;
+    const maxX = Math.max(minX, window.innerWidth - width - 12);
+    const minY = 76;
+    const maxY = Math.max(minY, window.innerHeight - height - 12);
+    return { minX, maxX, minY, maxY };
+  };
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const render = () => {
+    const area = bounds();
+    scout.x = clamp(scout.x, area.minX, area.maxX);
+    scout.y = clamp(scout.y, area.minY, area.maxY);
+    root.style.transform = `translate(${Math.round(scout.x)}px, ${Math.round(scout.y)}px)`;
+    bubble.classList.toggle('flip', scout.x > window.innerWidth * 0.58);
+  };
+  if (reduced) {
+    scout.x = window.innerWidth - 100;
+    scout.y = window.innerHeight - 110;
+  }
+  render();
+  orb.addEventListener('click', () => {
+    document.getElementById('ai')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('chatInput')?.focus();
+  });
+  close?.addEventListener('click', () => { bubble.hidden = true; });
+  root.addEventListener('mouseenter', () => { scout.hover = true; });
+  root.addEventListener('mouseleave', () => { scout.hover = false; });
+  if (reduced) return;
+  const tick = timestamp => {
+    if (!scout.hover && !document.hidden) {
+      if (timestamp - scout.lastTurn > 4600) {
+        const angle = Math.random() * Math.PI * 2;
+        scout.vx = Math.cos(angle) * 0.38;
+        scout.vy = Math.sin(angle) * 0.26;
+        scout.lastTurn = timestamp;
+      }
+      const area = bounds();
+      scout.x += scout.vx;
+      scout.y += scout.vy;
+      if (scout.x <= area.minX || scout.x >= area.maxX) scout.vx *= -1;
+      if (scout.y <= area.minY || scout.y >= area.maxY) scout.vy *= -1;
+      render();
+    }
+    window.requestAnimationFrame(tick);
+  };
+  window.requestAnimationFrame(tick);
 }
 
 function renderPlan(data) {
@@ -1309,7 +1484,8 @@ async function initChat() {
     addMsg('user', text);
     if (window.SupabaseMemory?.enabled) saveChatMessage('user', text);
     try {
-      const mode = /cadangan|plan|trade plan/i.test(text) ? 'plan' : 'chat';
+      const mode = /candle|corak|doji|hammer|engulf|sumbu|marubozu|harami/i.test(text) ? 'candle'
+        : /cadangan|plan|trade plan/i.test(text) ? 'plan' : 'chat';
       const data = await askAI(text, mode);
       if (mode === 'plan' && data.plan) {
         state.currentPlan = data;
@@ -1630,12 +1806,13 @@ async function persistProfile() {
 }
 
 function bind() {
-  $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; resetPlan(); resetChartView(); renderAll(); await persistProfile(); });
-  $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); resetChartView(); drawChart(); await persistProfile(); });
-  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); });
+  $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; resetPlan(); resetChartView(); renderAll(); loadCandleAnalysis(); await persistProfile(); });
+  $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); resetChartView(); drawChart(); loadCandleAnalysis(); await persistProfile(); });
+  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); loadCandleAnalysis(); });
   $('planBtn').addEventListener('click', submitPlan);
   $('summaryBtn')?.addEventListener('click', generateSummary);
   $('researchBtn')?.addEventListener('click', runResearch);
+  $('candleBtn')?.addEventListener('click', runCandle);
   $('decisionForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = $('decisionInput');
@@ -1699,6 +1876,9 @@ async function boot() {
   loadChartTemplates();
   bind();
   renderAll();
+  initScout();
+  loadCandleAnalysis();
+  loadNews();
   renderMarketSummary();
   tickClock();
   checkAiStatus();
@@ -1719,6 +1899,7 @@ async function boot() {
   setInterval(tickClock, 1000);
   refreshLongbridgeQuotes();
   refreshMarketData();
+  setInterval(() => loadCandleAnalysis(), 10000);
   setInterval(() => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); }, 60000);
 }
 

@@ -122,6 +122,41 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(ai.risk.decision, 'pending_human_approval');
     assert.equal(ai.risk.paperOnly, true);
 
+    const candles = [
+      { open: 100, high: 101, low: 99.5, close: 101 },
+      { open: 101, high: 101.5, low: 100, close: 100.5 },
+      { open: 100.5, high: 101, low: 99.5, close: 100 },
+      { open: 100, high: 106, low: 99.5, close: 105.5 },
+    ];
+    const candleResponse = await fetch(`${base}/api/candles`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ symbol: 'XAU/USD', timeframe: '1D', series: candles }),
+    });
+    assert.equal(candleResponse.status, 200);
+    const candlePayload = await candleResponse.json();
+    assert.equal(candlePayload.signal.action, 'BUY');
+    assert.ok(candlePayload.reply.includes('Bullish Engulfing'));
+    assert.ok(candlePayload.reply.includes('gate risiko'));
+
+    const candleMode = await fetch(`${base}/api/ai`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Apa maksud candle ini?',
+        mode: 'candle',
+        context: { ...context, chart: { symbol: 'XAU/USD', timeframe: '1D', series: candles } },
+      }),
+    });
+    assert.equal(candleMode.status, 200);
+    const candleAi = await candleMode.json();
+    assert.equal(candleAi.candleAnalysis.signal.action, 'BUY');
+    assert.equal(candleAi.provider, 'rules');
+
+    const sharedModule = await fetch(`${base}/shared/candle-patterns.js`);
+    assert.equal(sharedModule.status, 200);
+    assert.match(sharedModule.headers.get('content-type'), /javascript/);
+
     const broker = await (await fetch(`${base}/api/broker/status`)).json();
     assert.equal(broker.liveOrdersEnabled, false);
     assert.equal(broker.capabilities.paperOrders, true);

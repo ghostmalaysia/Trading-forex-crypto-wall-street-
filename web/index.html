@@ -157,7 +157,7 @@
         <article class="panel" id="news">
           <div class="panel-head">
             <h3>Market News</h3>
-            <span class="muted">Sample headlines (mock)</span>
+            <span class="muted" id="newsProvider">Sample headlines (mock)</span>
           </div>
           <div id="newsList" class="news-list"></div>
         </article>
@@ -173,6 +173,8 @@
           <button id="summaryBtn" type="button">Generate Market Summary</button>
           <button id="researchBtn" type="button">Analisis Mendalam (AI)</button>
           <div id="researchBody" class="plan-body"><p class="muted">Tekan “Analisis Mendalam” untuk laporan terperinci dengan bukti, senario, pembelajaran, dan had modal.</p></div>
+          <button id="candleBtn" type="button">Terangkan Candle / Corak</button>
+          <div id="candleBody" class="plan-body"><p class="muted">Tekan “Terangkan Candle” untuk maksud badan, sumbu, dan corak candle semasa.</p></div>
           <div class="panel-head decision-head">
             <h4>AI Trading Room</h4>
             <span class="badge" id="decisionBadge">Kenapa buy / sell?</span>
@@ -310,8 +312,16 @@
       </footer>
     </main>
   </div>
+  <div id="aiScout" class="ai-scout" hidden>
+    <button id="aiScoutOrb" class="ai-scout-orb" type="button" aria-label="Buka AI Assistant">AI</button>
+    <div id="aiScoutBubble" class="ai-scout-bubble" hidden>
+      <button id="aiScoutClose" class="ai-scout-close" type="button" aria-label="Tutup mesej AI">×</button>
+      <strong id="aiScoutTitle">AI SCOUT</strong>
+      <p id="aiScoutText"></p>
+    </div>
+  </div>
   <script src="./supabase-config.js"></script>
   <script src="./supabase-client.js"></script>
-  <script src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -6,12 +6,13 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.mjs';
 import { complete, providerName, modelName } from './ai/provider.mjs';
+import { currentNews, newsDigest, newsStatus } from './ai/news-adapter.mjs';
 import { analyzeChart, buildPlan, normalizePlan, riskGate } from './ai/plan.mjs';
 import { buildResearch } from './ai/research.mjs';
 import { decisionAction, decisionExplanation } from './ai/decision.mjs';
 import { guardPaperOrder, paperAccountStatus, paperRiskContext, reservePaperOrder, settlePaperOrder } from './ai/paper-account.mjs';
 import { learningDigest, learningStatus, recordPaperOutcome } from './ai/learning.mjs';
-import { CALENDAR, FOCUS, NEWS } from './shared/feed-data.js';
+import { detectCandlePatterns, explainCandlePatterns, normalizeCandleSeries } from './shared/candle-patterns.js';
 import { detectAnomalies, evaluateRules, normalizeRule } from './ai/monitor.mjs';
 import { backtestSmaCross } from './ai/backtest.mjs';
 import { evaluatePaperOrder, simulateFill } from './ai/execution.mjs';
@@ -42,6 +43,7 @@ import {
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
+const sharedRoot = resolve(root, 'shared');
 const port = Number(process.env.PORT || 8080);
 const host = process.env.HOST || '127.0.0.1';
 const pending = new Map();
@@ -195,6 +197,17 @@ function clientHash(req) {
 function sendJson(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(value));
+}
+
+async function sendStaticFile(res, file) {
+  try {
+    const body = await readFile(file);
+    const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
+    res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' });
+    res.end(body);
+  } catch {
+    sendJson(res, 404, { error: 'Not found' });
+  }
 }
 
 function sendJsonWithCookie(res, status, value, cookie) {
@@ -575,6 +588,7 @@ async function handle(req, res) {
       aiModel: modelName(),
       marketProvider: marketCache.payload?.provider || 'mock',
       marketAdapter: marketCache.payload?.adapter || (isLicensedAdapter() ? 'licensed' : 'indicative'),
+      news: newsStatus(),
       push: pushStatus(),
       session: { configured: sessionConfigState.configured, cookieName: sessionConfigState.cookieName },
       paper: {
@@ -606,7 +620,7 @@ async function handle(req, res) {
   }
   if (url.pathname === '/api/news') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
-    return sendJson(res, 200, { items: NEWS, calendar: CALENDAR, focus: FOCUS, provider: 'curated-mock', fetchedAt: new Date().toISOString() });
+    return sendJson(res, 200, await currentNews());
   }
   if (url.pathname === '/api/monitor') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -884,6 +898,29 @@ async function handle(req, res) {
       return sendJson(res, 400, { error: error.message });
     }
   }
+  if (url.pathname === '/api/candles') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); }
+    catch (error) { return sendJson(res, 400, { error: error.message === 'Request body too large' ? error.message : 'Invalid JSON body' }); }
+    const symbol = typeof payload.symbol === 'string' ? payload.symbol.trim().slice(0, 32)
+      : typeof payload.context?.selected === 'string' ? payload.context.selected.trim().slice(0, 32) : '';
+    const timeframe = typeof payload.timeframe === 'string' ? payload.timeframe.trim().slice(0, 8)
+      : typeof payload.context?.timeframe === 'string' ? payload.context.timeframe.trim().slice(0, 8) : '';
+    const series = normalizeCandleSeries(payload.series || payload.context?.chart?.series);
+    const result = detectCandlePatterns(series, { symbol, timeframe });
+    if (result.insufficient) return sendJson(res, 400, { error: 'Provide at least three candle points' });
+    if (payload.audit === true) {
+      await appendAudit('ai_candle_explained', { client: clientHash(req), symbol, signal: result.signal.action });
+    }
+    return sendJson(res, 200, {
+      reply: explainCandlePatterns(result),
+      provider: 'rules',
+      model: 'candle-rules',
+      disclaimer: 'Informational only; not financial advice.',
+      ...result,
+    });
+  }
   if (url.pathname === '/api/ai') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
     const clientKey = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'local';
@@ -898,7 +935,7 @@ async function handle(req, res) {
     catch (error) { return sendJson(res, 400, { error: error.message === 'Request body too large' ? error.message : 'Invalid JSON body' }); }
     const message = typeof payload.message === 'string' ? payload.message.trim().slice(0, 2000) : '';
     if (!message) return sendJson(res, 400, { error: 'Provide a message' });
-    const mode = ['plan', 'research', 'explain'].includes(payload.mode) ? payload.mode : 'chat';
+    const mode = ['plan', 'research', 'explain', 'candle'].includes(payload.mode) ? payload.mode : 'chat';
     const context = sanitizeContext(payload.context);
     const paper = paperAccountStatus();
     const paperRisk = paperRiskContext();
@@ -906,9 +943,33 @@ async function handle(req, res) {
     context.risk = { ...context.risk, ...paperRisk.risk };
     context.paperAccount = paper;
     context.lessons = [...learningDigest(), ...context.lessons].slice(0, 10);
+    context.news = await newsDigest();
     const analysis = analyzeChart(context);
+    const candleAnalysis = detectCandlePatterns(
+      normalizeCandleSeries(payload.context?.chart?.series || context.chart.series),
+      { symbol: context.selected || context.chart.symbol, timeframe: context.timeframe || context.chart.timeframe },
+    );
+    context.candleAnalysis = candleAnalysis;
     const knowledge = await platformKnowledge();
     try {
+      if (mode === 'candle') {
+        const reply = candleAnalysis.insufficient
+          ? 'Data carta tidak mencukupi untuk membaca candle. Sediakan sekurang-kurangnya tiga titik harga.'
+          : explainCandlePatterns(candleAnalysis);
+        await appendAudit('ai_candle_explained', {
+          client,
+          symbol: context.selected || analysis.symbol || null,
+          signal: candleAnalysis.signal.action,
+        });
+        return sendJson(res, 200, {
+          reply,
+          provider: 'rules',
+          model: 'candle-rules',
+          candleAnalysis,
+          analysis,
+          disclaimer: 'Informational only; not financial advice.',
+        });
+      }
       if (mode === 'research') {
         const result = await buildResearch(analysis, context, {
           complete: messages => complete(messages),
@@ -922,7 +983,7 @@ async function handle(req, res) {
           symbol: context.selected || analysis.symbol || null,
           decision: null,
         });
-        return sendJson(res, 200, { ...result, analysis });
+        return sendJson(res, 200, { ...result, analysis, candleAnalysis });
       }
       if (mode === 'explain') {
         const plan = payload.plan && typeof payload.plan === 'object'
@@ -942,6 +1003,7 @@ async function handle(req, res) {
           plan,
           risk,
           analysis,
+          candleAnalysis,
           decision: decisionAction(plan, risk),
           disclaimer: 'Informational only; not financial advice.',
         });
@@ -950,7 +1012,7 @@ async function handle(req, res) {
       const system = mode === 'plan' ? planSystemPrompt(knowledge, enriched) : systemPrompt(knowledge, enriched);
       const messages = [{ role: 'system', content: system }, ...context.history, { role: 'user', content: message }];
       const result = await complete(messages);
-      const response = { reply: result.reply, provider: result.provider, model: result.model, disclaimer: 'Informational only; not financial advice.' };
+      const response = { reply: result.reply, provider: result.provider, model: result.model, candleAnalysis, disclaimer: 'Informational only; not financial advice.' };
       if (mode === 'plan') {
         const raw = result.provider === 'groq' ? parseJsonPlan(result.reply) : null;
         const plan = normalizePlan(raw, analysis, context);
@@ -1089,17 +1151,16 @@ async function handle(req, res) {
     return sendJson(res, 200, { user: result.data?.user || null });
   }
 
+  if (url.pathname.startsWith('/shared/')) {
+    const name = decodeURIComponent(url.pathname.slice('/shared/'.length));
+    const file = resolve(sharedRoot, name);
+    if (!file.startsWith(`${sharedRoot}${sep}`)) return sendJson(res, 403, { error: 'Forbidden' });
+    return sendStaticFile(res, file);
+  }
   const requested = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
   const file = resolve(webRoot, `.${requested}`);
   if (!file.startsWith(`${webRoot}${sep}`)) return sendJson(res, 403, { error: 'Forbidden' });
-  try {
-    const body = await readFile(file);
-    const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-    res.writeHead(200, { 'Content-Type': contentTypes[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' });
-    res.end(body);
-  } catch {
-    sendJson(res, 404, { error: 'Not found' });
-  }
+  return sendStaticFile(res, file);
 }
 
 if (process.env.MONITOR_DISABLED !== 'true') {

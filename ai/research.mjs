@@ -48,6 +48,8 @@ export function buildResearchInput(analysis, context) {
       blocked: !!account.blocked,
     },
     lessons: learningDigest(),
+    news: Array.isArray(context?.news) ? context.news.slice(0, 8) : [],
+    candle: context?.candleAnalysis?.signal || null,
   };
 }
 
@@ -90,6 +92,12 @@ export function localResearch(analysis, context) {
   const lessonText = input.lessons.length
     ? input.lessons.map(item => `- ${item}`).join('\n')
     : '- Belum ada outcome paper yang dinilai; sistem masih mengumpulkan bukti.';
+  const newsText = input.news.length
+    ? input.news.map(item => `- Berita semasa: ${item}`).join('\n')
+    : '- Tiada feed berita semasa dikonfigurasi; katalis makro tidak disahkan.';
+  const candleText = input.candle
+    ? `- Isyarat candle: ${input.candle.action} (${input.candle.confidence}) — ${input.candle.label || 'tiada corak jelas'}.`
+    : '- Tiada corak candle yang dikunci pada bacaan ini.';
   const gold = input.focus.includes('XAU');
   return [
     '**1. RINGKASAN**',
@@ -111,8 +119,10 @@ export function localResearch(analysis, context) {
     '',
     '**4. KONTEKS USD/GOLD**',
     gold
-      ? 'Emas dipengaruhi oleh DXY, hasil bon AS sebenar, jangkaan Fed, inflasi, permintaan safe-haven dan central-bank buying. Dalam sistem ini DXY ialah pasangan semakan: jika DXY mengukuh, gold long perlu berhati-hati. Data makro masa nyata tidak dibekalkan di sini, jadi sebarang katalis perlu disemak secara berasingan.'
-      : 'DXY dipengaruhi oleh perbezaan kadar faedah, dasar Fed/FOMC, hasil Treasury, data CPI/NFP/PCE dan aliran risk-on/risk-off. DXY juga memberi petunjuk arah untuk XAU/USD. Data makro masa nyata tidak dibekalkan di sini, jadi jangan mengandaikan berita semasa.',
+      ? 'Emas dipengaruhi oleh DXY, hasil bon AS sebenar, jangkaan Fed, inflasi, permintaan safe-haven dan central-bank buying. Dalam sistem ini DXY ialah pasangan semakan: jika DXY mengukuh, gold long perlu berhati-hati.'
+      : 'DXY dipengaruhi oleh perbezaan kadar faedah, dasar Fed/FOMC, hasil Treasury, data CPI/NFP/PCE dan aliran risk-on/risk-off. DXY juga memberi petunjuk arah untuk XAU/USD.',
+    newsText,
+    candleText,
     '',
     '**5. PEMBELAJARAN SISTEM**',
     lessonText,
