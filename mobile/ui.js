@@ -1,11 +1,11 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-export function ScreenHeader({ title, subtitle, action }) {
+export function ScreenHeader({ title, subtitle, action, titleStyle }) {
   return (
     <View style={styles.header}>
       <View>
-        <Text style={styles.headerTitle}>{title}</Text>
+        <Text style={[styles.headerTitle, titleStyle]}>{title}</Text>
         {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
       </View>
       {action}

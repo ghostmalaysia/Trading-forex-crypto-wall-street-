@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'TradeWall',
-  description: 'Forex, gold, and crypto intelligence dashboard',
+  title: 'MIM VENTURES — Trading Intelligence Dashboard',
+  description: 'MIM VENTURES forex, gold, and crypto intelligence dashboard',
 };
 
 export default function RootLayout({ children }) {

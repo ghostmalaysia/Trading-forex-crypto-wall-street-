@@ -1,4 +1,4 @@
-# Next Steps
+# MIM VENTURES — Next Steps
 
 ## 1. Configure Supabase (cloud memory and AI learning)
 1. Create a free project at [supabase.com](https://supabase.com).
@@ -89,7 +89,7 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - Configure `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SESSION_COOKIE_SECRET`, and verify sign-in/session refresh against the real project.
 - Configure MetaApi URLs/token/account and test proposal -> approval -> order -> reconciliation with a demo account.
 - Configure a licensed market endpoint/key and verify symbol mapping and provider terms.
-- Install `next/` dependencies and run `npm run dev` with `TRADEWALL_UPSTREAM` pointed at `server.mjs`.
+- Install `next/` dependencies and run `npm run dev` with `MIM_VENTURES_UPSTREAM` (or legacy `TRADEWALL_UPSTREAM`) pointed at `server.mjs`.
 
 ## 14. Safety checklist
 - Keep AI output informational only.

@@ -9,7 +9,8 @@ export default function DashboardScreen({ health, market, plan, alerts, busy, er
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <ScreenHeader
-        title="TRADEWALL"
+        title="MIM VENTURES"
+        titleStyle={styles.brandTitle}
         subtitle="XAU/USD + DXY · paper intelligence"
         action={<Button title="REFRESH" color="#22d3ee" disabled={busy} onPress={onRefresh} />}
       />
@@ -57,6 +58,7 @@ export default function DashboardScreen({ health, market, plan, alerts, busy, er
 }
 
 const styles = StyleSheet.create({
+  brandTitle: { color: '#e7c15a', textShadowColor: 'rgba(231,193,90,.35)', textShadowRadius: 12 },
   content: { padding: 18, paddingBottom: 40 },
   spinner: { marginVertical: 8 },
   error: { color: '#f87171', fontSize: 13, marginBottom: 12 },

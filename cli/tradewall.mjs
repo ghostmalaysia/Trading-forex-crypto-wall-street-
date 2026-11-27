@@ -156,7 +156,7 @@ export async function executeCommand(command, options, api, readJson = loadJson)
         : String(options.tokens || '').split(',').map(token => token.trim()).filter(Boolean);
       const input = {
         tokens,
-        title: options.title || 'TradeWall alert',
+        title: options.title || 'MIM VENTURES alert',
         body: requireOption(options, 'body', '--body'),
         data: options.dataFile ? await readJson(options.dataFile) : {},
       };

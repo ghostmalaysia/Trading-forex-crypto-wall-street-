@@ -1,4 +1,4 @@
-# Architecture
+# MIM VENTURES — Architecture
 
 ## Vision
 A free-first trading intelligence platform for Forex, Crypto, and Wall Street markets, delivered as:
@@ -108,7 +108,7 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 - Push sends require the exact `SEND PUSH` confirmation plus a server-only admin token; tokens never appear in browser responses or audit logs.
 
 ## Deployment (Free-first)
-- **Web**: static `web/` MVP on any static host, or `next/` on Vercel/Cloudflare Pages with `TRADEWALL_UPSTREAM` pointing to the Node server.
+- **Web**: static `web/` MVP on any static host, or `next/` on Vercel/Cloudflare Pages with `MIM_VENTURES_UPSTREAM` (legacy `TRADEWALL_UPSTREAM` still accepted) pointing to the Node server.
 - **DB/Auth**: Supabase/Neon free tier when needed, with optional server-side HttpOnly sessions.
 - **CI**: GitHub Actions.
 - **Mobile**: Expo EAS builds (free tier limits apply).

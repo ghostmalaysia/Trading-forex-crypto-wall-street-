@@ -137,7 +137,7 @@ export function normalizePushTokens(tokens) {
 
 export function buildPushMessage({ title, body, data, sound } = {}) {
   const message = {
-    title: text(title).slice(0, 120) || 'TradeWall alert',
+    title: text(title).slice(0, 120) || 'MIM VENTURES alert',
     body: text(body).slice(0, 240),
     data: safePushData(data),
   };

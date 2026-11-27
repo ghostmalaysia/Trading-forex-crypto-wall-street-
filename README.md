@@ -1,6 +1,6 @@
-# Trading Forex / Crypto / Wall Street Platform
+# MIM VENTURES — Trading Forex / Crypto / Wall Street Platform
 
-Free-first web + mobile trading intelligence dashboard with AI-assisted monitoring, news, and learning.
+Free-first web + mobile trading intelligence dashboard with AI-assisted monitoring, news, and learning. Product name: **MIM VENTURES**. Internal package/module identifiers may still use the legacy `tradewall` name unless explicitly renamed.
 
 ## What’s in this repo
 - `ARCHITECTURE.md` - system design, stack, modules, data flow
@@ -132,7 +132,7 @@ Copy `.env.example` and set only the providers you actually use:
 - **Summaries:** `SUMMARY_INTERVAL_SECONDS` enables server scheduling (minimum 300 seconds); leave it unset for on-demand summaries only.
 - **Push:** `PUSH_ADMIN_TOKEN`, `EXPO_PUSH_URL`, `EXPO_PUSH_ACCESS_TOKEN`, `PUSH_REQUEST_TIMEOUT_MS`, and mobile `EXPO_PUBLIC_EAS_PROJECT_ID`. Apply `supabase/migrations/202611300001_push_tokens.sql` to store tokens with per-user RLS. Admin push calls accept `x-push-admin-token` or `adminToken` in the body.
 - **Server sessions:** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SESSION_COOKIE_SECRET`, `SESSION_COOKIE_NAME`, `SESSION_SECURE`, `SESSION_TTL_SECONDS`. Cookies are HttpOnly, `SameSite=Lax`, `Secure` in production, and use the `__Host-` prefix when secure. Session mutations are same-origin only.
-- **Next.js:** install dependencies in `next/`, set `TRADEWALL_UPSTREAM` (default `http://127.0.0.1:8080`), and run `npm run dev` there to proxy `/api/*` to `server.mjs`. The static `web/` MVP remains supported.
+- **Next.js:** install dependencies in `next/`, set `MIM_VENTURES_UPSTREAM` (default `http://127.0.0.1:8080`; legacy `TRADEWALL_UPSTREAM` is still accepted), and run `npm run dev` there to proxy `/api/*` to `server.mjs`. The static `web/` MVP remains supported.
 
 No provider keys are sent to browsers or printed by the CLI. `/api/health` reports only configuration status.
 

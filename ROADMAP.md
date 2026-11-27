@@ -1,4 +1,4 @@
-# Roadmap
+# MIM VENTURES — Roadmap
 
 ## Original Vision
 Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Crypto, and Wall Street** with:

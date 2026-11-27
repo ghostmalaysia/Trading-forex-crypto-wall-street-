@@ -5,7 +5,7 @@ const hopByHop = new Set(['host', 'content-length', 'connection', 'keep-alive', 
 async function proxy(request, context) {
   const params = await context.params;
   const segments = Array.isArray(params?.path) ? params.path : [];
-  const upstream = process.env.TRADEWALL_UPSTREAM || 'http://127.0.0.1:8080';
+  const upstream = process.env.MIM_VENTURES_UPSTREAM || process.env.TRADEWALL_UPSTREAM || 'http://127.0.0.1:8080';
   const target = new URL(`/api/${segments.join('/')}`, upstream);
   target.search = request.nextUrl.search;
 
@@ -25,7 +25,7 @@ async function proxy(request, context) {
     for (const cookie of response.headers.getSetCookie?.() || []) outHeaders.append('set-cookie', cookie);
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers: outHeaders });
   } catch (error) {
-    return Response.json({ error: 'TradeWall upstream unavailable', detail: String(error.message).slice(0, 120) }, { status: 502 });
+    return Response.json({ error: 'MIM VENTURES upstream unavailable', detail: String(error.message).slice(0, 120) }, { status: 502 });
   }
 }
 

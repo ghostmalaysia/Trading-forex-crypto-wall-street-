@@ -103,7 +103,7 @@ test('build push message truncates fields and removes secret data', () => {
   assert.ok(!serialized.includes('hunter2'));
   assert.ok(!serialized.includes('abc123'));
   assert.ok(!serialized.includes('secret-token'));
-  assert.equal(buildPushMessage({}).title, 'TradeWall alert');
+  assert.equal(buildPushMessage({}).title, 'MIM VENTURES alert');
   assert.equal(buildPushMessage({ sound: 'https://evil.example/s.wav' }).sound, undefined);
 });
 
