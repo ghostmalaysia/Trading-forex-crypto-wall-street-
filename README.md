@@ -12,7 +12,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 ## MVP Features (current)
 - Dark-theme trading dashboard UI
 - Market watchlist (Forex/Crypto/Stocks) with mock live updates
-- Simple price chart (canvas) with symbol/timeframe switching
+- TradingView-style canvas chart: candlesticks, volume, MA20/MA50, RSI14, crosshair, zoom/pan, horizontal/trend drawing tools
 - Market/news feed panel
 - AI assistant focused on **XAU/USD (gold)** and **USD/DXY** only
 - Chart-aware AI: reads the selected chart series, computes SMA/RSI/ATR/trend, and explains its view

@@ -23,13 +23,19 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - `mode: "plan"` returns a normalized plan plus risk gate decision.
 - Approve/Reject records an audit row in `trade_plans`; feedback records a row in `ai_learning`.
 
-## 4. Recommended next implementation
-- Upgrade the canvas chart toward TradingView-style tools: candlesticks, volume, MA/EMA, RSI/MACD panes, crosshair, drawing tools, and alerts.
+## 4. Current chart tools (done)
+- Candlestick/line switch, synthesized volume bars, MA20/MA50 overlays, RSI14 pane, crosshair with price labels.
+- Mouse wheel zoom, drag-to-pan, horizontal-line and trend-line drawing tools.
+- Toolbar state resets when symbol/timeframe changes; chart remains dependency-free canvas.
+
+## 5. Recommended next implementation
+- Add symbol-specific alerts, a screener, and a news/economic calendar.
+- Add MACD/Bollinger panes and saved drawing templates.
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Add `DataProvider` adapters for real gold/USD data (free APIs first).
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
 
-## 5. Safety checklist
+## 6. Safety checklist
 - Keep AI output informational only.
 - No auto-trading; AI plans stay paper-only and require explicit confirmation.
 - Keep API keys in environment variables on the server.

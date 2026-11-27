@@ -19,7 +19,12 @@ const NEWS = [
 ];
 
 const FOCUS = ['XAU/USD', 'DXY'];
-const state = { selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '', configEditing: false, lessons: [], history: [], currentPlan: null, aiProvider: 'local', aiModel: 'rules' };
+const state = {
+  selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
+  configEditing: false, lessons: [], history: [], currentPlan: null, aiProvider: 'local', aiModel: 'rules',
+  chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, rsi: false },
+  viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
+};
 const $ = (id) => document.getElementById(id);
 
 function seed(base, vol) {
@@ -78,6 +83,7 @@ function renderWatchlist() {
       state.selected = tr.dataset.symbol;
       $('symbolSelect').value = state.selected;
       resetPlan();
+      resetChartView();
       renderAll();
     };
     tr.addEventListener('click', selectSymbol);
@@ -105,9 +111,57 @@ function seriesForTimeframe(item) {
   return map[state.timeframe] || item.history;
 }
 
+function rsiSeries(values, period = 14) {
+  const result = Array(values.length).fill(null);
+  if (values.length <= period) return result;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = values[i] - values[i - 1];
+    if (diff >= 0) gains += diff; else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  result[period] = avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2);
+  for (let i = period + 1; i < values.length; i++) {
+    const diff = values[i] - values[i - 1];
+    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+    result[i] = avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2);
+  }
+  return result;
+}
+
+function movingAverage(values, period, index) {
+  if (index < period - 1) return null;
+  let sum = 0;
+  for (let i = index - period + 1; i <= index; i++) sum += values[i];
+  return sum / period;
+}
+
+function resetChartView() {
+  state.viewCount = null;
+  state.viewOffset = 0;
+  state.crosshair = null;
+  state.drawings = [];
+  state.pendingTrend = null;
+}
+
 function drawChart() {
   const c = current();
-  const data = seriesForTimeframe(c);
+  const all = seriesForTimeframe(c);
+  if (all.length < 2) return;
+  const total = all.length;
+  const count = Math.max(10, Math.min(state.viewCount || total, total));
+  const end = Math.max(count, total - state.viewOffset);
+  const start = Math.max(0, end - count);
+  const data = all.slice(start, end);
+  const rawLow = Math.min(...data);
+  const rawHigh = Math.max(...data);
+  const span = rawHigh - rawLow || Math.max(Math.abs(rawHigh) * 0.01, 1);
+  const lo = rawLow - span * 0.08;
+  const hi = rawHigh + span * 0.08;
+
   const canvas = $('priceChart');
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
@@ -117,34 +171,146 @@ function drawChart() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const pad = { l: 48, r: 16, t: 16, b: 28 };
-  const min = Math.min(...data), max = Math.max(...data);
-  const range = max - min || 1;
-  const x = (i) => pad.l + (i / (data.length - 1)) * (cssW - pad.l - pad.r);
-  const y = (v) => pad.t + (1 - (v - min) / range) * (cssH - pad.t - pad.b);
+  const pad = { l: 50, r: 14, t: 16, x: 0 };
+  const mainBottom = state.indicators.rsi ? cssH - 88 : cssH - 26;
+  const plotW = cssW - pad.l - pad.r;
+  const plotH = mainBottom - pad.t;
+  const x = i => pad.l + (i / (data.length - 1)) * plotW;
+  const y = v => pad.t + (1 - (v - lo) / (hi - lo)) * plotH;
+  state.chartScale = { pad, cssW, cssH, mainBottom, lo, hi, plotW, plotH, start, end, count };
 
-  ctx.strokeStyle = '#162237'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#162237'; ctx.lineWidth = 1; ctx.setLineDash([]);
   for (let i = 0; i < 5; i++) {
-    const gy = pad.t + (i / 4) * (cssH - pad.t - pad.b);
+    const gy = pad.t + (i / 4) * plotH;
     ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(cssW - pad.r, gy); ctx.stroke();
-    const val = max - (i / 4) * range;
-    ctx.fillStyle = '#7589a5'; ctx.font = '10px monospace'; ctx.fillText((c.price > 100 ? val.toFixed(0) : val.toFixed(4)), 6, gy + 4);
+    const val = hi - (i / 4) * (hi - lo);
+    ctx.fillStyle = '#7589a5'; ctx.font = '10px monospace';
+    ctx.fillText(c.price > 100 ? val.toFixed(0) : val.toFixed(4), 5, gy + 4);
   }
 
-  ctx.beginPath();
-  data.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
-  ctx.strokeStyle = c.change >= 0 ? '#00d68f' : '#ff4d5e'; ctx.lineWidth = 2; ctx.stroke();
+  const deltas = data.map((v, i) => Math.abs(v - (i ? data[i - 1] : v)));
+  const maxDelta = Math.max(...deltas) || 1;
+  const band = plotW / data.length;
+  deltas.forEach((delta, i) => {
+    const h = (delta / maxDelta) * 26;
+    ctx.fillStyle = data[i] >= (i ? data[i - 1] : data[i]) ? 'rgba(0,214,143,.16)' : 'rgba(255,77,94,.16)';
+    ctx.fillRect(x(i) - Math.max(1, band * 0.3), mainBottom - h, Math.max(2, band * 0.6), h);
+  });
 
-  const grad = ctx.createLinearGradient(0, pad.t, 0, cssH - pad.b);
-  grad.addColorStop(0, c.change >= 0 ? 'rgba(0,214,143,.22)' : 'rgba(255,77,94,.2)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.lineTo(x(data.length - 1), cssH - pad.b); ctx.lineTo(x(0), cssH - pad.b); ctx.closePath();
-  ctx.fillStyle = grad; ctx.fill();
+  if (state.chartType === 'candle') {
+    const bodyW = Math.max(2, Math.min(11, band * 0.62));
+    data.forEach((close, i) => {
+      const open = i ? data[i - 1] : close;
+      const wick = Math.max(Math.abs(close - open) * 0.4, span * 0.012);
+      const up = close >= open;
+      ctx.strokeStyle = up ? '#00d68f' : '#ff4d5e';
+      ctx.fillStyle = up ? '#00d68f' : '#ff4d5e';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x(i), y(Math.max(open, close) + wick)); ctx.lineTo(x(i), y(Math.min(open, close) - wick)); ctx.stroke();
+      const top = y(Math.max(open, close));
+      const height = Math.max(1, Math.abs(y(open) - y(close)));
+      ctx.fillRect(x(i) - bodyW / 2, top, bodyW, height);
+    });
+  } else {
+    ctx.beginPath();
+    data.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+    ctx.strokeStyle = c.change >= 0 ? '#00d68f' : '#ff4d5e'; ctx.lineWidth = 2; ctx.stroke();
+    const grad = ctx.createLinearGradient(0, pad.t, 0, mainBottom);
+    grad.addColorStop(0, c.change >= 0 ? 'rgba(0,214,143,.22)' : 'rgba(255,107,107,.2)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.lineTo(x(data.length - 1), mainBottom); ctx.lineTo(x(0), mainBottom); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+  }
+
+  const drawMa = period => {
+    ctx.beginPath();
+    let started = false;
+    data.forEach((_, i) => {
+      const value = movingAverage(all, period, start + i);
+      if (value == null) return;
+      const px = x(i), py = y(value);
+      if (started) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      started = true;
+    });
+    ctx.lineWidth = 1.2; ctx.stroke();
+  };
+  if (state.indicators.ma20) { ctx.strokeStyle = '#ffb020'; drawMa(20); }
+  if (state.indicators.ma50) { ctx.strokeStyle = '#22d3ee'; drawMa(50); }
+
+  ctx.setLineDash([4, 3]);
+  state.drawings.forEach(drawing => {
+    if (drawing.type === 'hline') {
+      const py = y(drawing.price);
+      if (py < pad.t || py > mainBottom) return;
+      ctx.strokeStyle = '#a78bfa'; ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(cssW - pad.r, py); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = '#a78bfa'; ctx.font = '9px monospace';
+      ctx.fillText(fmtPrice(drawing.price), cssW - pad.r - 48, py - 4); ctx.setLineDash([4, 3]);
+    }
+    if (drawing.type === 'trend') {
+      ctx.strokeStyle = '#f5c451';
+      ctx.beginPath();
+      ctx.moveTo(pad.l + drawing.x1Ratio * plotW, y(drawing.price1));
+      ctx.lineTo(pad.l + drawing.x2Ratio * plotW, y(drawing.price2));
+      ctx.stroke();
+    }
+  });
+  if (state.pendingTrend) {
+    ctx.fillStyle = '#f5c451';
+    ctx.beginPath(); ctx.arc(pad.l + state.pendingTrend.xRatio * plotW, y(state.pendingTrend.price), 4, 0, Math.PI * 2); ctx.fill();
+  }
+
+  if (state.crosshair) {
+    const { px, py } = state.crosshair;
+    if (px >= pad.l && px <= cssW - pad.r && py >= pad.t && py <= mainBottom) {
+      ctx.strokeStyle = '#6b85a8'; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(px, pad.t); ctx.lineTo(px, mainBottom); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(cssW - pad.r, py); ctx.stroke();
+      ctx.setLineDash([]);
+      const price = hi - ((py - pad.t) / plotH) * (hi - lo);
+      ctx.fillStyle = '#111d2e'; ctx.fillRect(cssW - pad.r + 2, py - 8, pad.r - 2, 16);
+      ctx.fillStyle = '#dce6f5'; ctx.font = '9px monospace';
+      ctx.fillText(c.price > 100 ? price.toFixed(0) : price.toFixed(4), cssW - pad.r + 4, py + 3);
+      const index = start + Math.round(((px - pad.l) / plotW) * (data.length - 1));
+      ctx.fillStyle = '#111d2e'; ctx.fillRect(px - 16, mainBottom + 1, 32, 14);
+      ctx.fillStyle = '#dce6f5'; ctx.fillText(`T-${index}`, px - 14, mainBottom + 11);
+    }
+  }
+  ctx.setLineDash([]);
+
+  if (state.indicators.rsi) {
+    const rsiTop = mainBottom + 10;
+    const rsiBottom = cssH - 24;
+    const rsiHeight = rsiBottom - rsiTop;
+    ctx.fillStyle = '#080e18'; ctx.fillRect(pad.l, rsiTop, plotW, rsiHeight);
+    [30, 50, 70].forEach(level => {
+      const ly = rsiTop + rsiHeight - (level / 100) * rsiHeight;
+      ctx.strokeStyle = level === 50 ? '#26364e' : '#3a2a2e';
+      ctx.setLineDash(level === 50 ? [] : [3, 3]);
+      ctx.beginPath(); ctx.moveTo(pad.l, ly); ctx.lineTo(cssW - pad.r, ly); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = '#4a5f7d'; ctx.font = '9px monospace'; ctx.fillText(String(level), 18, ly + 3);
+    });
+    const rsiValues = rsiSeries(all);
+    ctx.beginPath();
+    let rsiStarted = false;
+    data.forEach((_, i) => {
+      const value = rsiValues[start + i];
+      if (value == null) return;
+      const px = x(i), py = rsiTop + rsiHeight - (value / 100) * rsiHeight;
+      if (rsiStarted) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      rsiStarted = true;
+    });
+    ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.fillStyle = '#7589a5'; ctx.font = '9px monospace'; ctx.fillText('RSI14', pad.l + 5, rsiTop + 11);
+  }
+
+  ctx.fillStyle = '#4a5f7d'; ctx.font = '9px monospace';
+  const labelStep = Math.max(1, Math.floor(data.length / 6));
+  for (let i = 0; i < data.length; i += labelStep) ctx.fillText(`T-${start + i}`, x(i) - 8, cssH - 6);
 
   const last = data[data.length - 1];
   ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(x(data.length - 1), y(last), 3.5, 0, Math.PI * 2); ctx.fill();
 
-  $('chartTitle').textContent = `${c.symbol} Price Chart (${state.timeframe})`;
+  $('chartTitle').textContent = `${c.symbol} ${state.chartType === 'candle' ? 'Candlestick' : 'Price'} Chart (${state.timeframe})`;
   const badge = $('chartChange');
   badge.textContent = fmtChange(c.change);
   badge.style.color = c.change >= 0 ? '#9ff0bf' : '#ffb3b3';
@@ -153,7 +319,71 @@ function drawChart() {
   const source = c.dataSource === 'longbridge' ? 'Longbridge live quote' : 'Simulated data';
   const sourceEl = $('chartSource');
   if (sourceEl) { sourceEl.textContent = c.dataSource === 'longbridge' ? 'LIVE' : 'SIM'; sourceEl.classList.toggle('live', c.dataSource === 'longbridge'); }
-  $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(c.price)}</strong></span><span>High: ${fmtPrice(max)}</span><span>Low: ${fmtPrice(min)}</span><span>Source: ${source}</span>`;
+  $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(c.price)}</strong></span><span>High: ${fmtPrice(rawHigh)}</span><span>Low: ${fmtPrice(rawLow)}</span><span>Bars: ${count}</span><span>Source: ${source}</span>`;
+}
+
+function bindChartTools() {
+  document.querySelectorAll('[data-chart-type]').forEach(btn => btn.addEventListener('click', () => {
+    state.chartType = btn.dataset.chartType;
+    document.querySelectorAll('[data-chart-type]').forEach(item => item.classList.toggle('active', item === btn));
+    drawChart();
+  }));
+  document.querySelectorAll('[data-tool]').forEach(btn => btn.addEventListener('click', () => {
+    state.drawTool = btn.dataset.tool;
+    state.pendingTrend = null;
+    document.querySelectorAll('[data-tool]').forEach(item => item.classList.toggle('active', item === btn));
+  }));
+  document.querySelectorAll('[data-indicator]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.indicator;
+    state.indicators[key] = !state.indicators[key];
+    btn.classList.toggle('active', state.indicators[key]);
+    drawChart();
+  }));
+
+  const canvas = $('priceChart');
+  let dragMoved = false;
+  canvas.addEventListener('mousemove', event => {
+    const rect = canvas.getBoundingClientRect();
+    state.crosshair = { px: event.clientX - rect.left, py: event.clientY - rect.top };
+    if (state.panStart) {
+      const dx = event.clientX - state.panStart.x;
+      if (Math.abs(dx) > 3) dragMoved = true;
+      const all = seriesForTimeframe(current());
+      const maxOffset = Math.max(0, all.length - 20);
+      state.viewOffset = Math.max(0, Math.min(maxOffset, state.panStart.offset + Math.round(dx / 6)));
+    }
+    drawChart();
+  });
+  canvas.addEventListener('mouseleave', () => { state.crosshair = null; drawChart(); });
+  canvas.addEventListener('mousedown', event => { state.panStart = { x: event.clientX, offset: state.viewOffset }; dragMoved = false; });
+  window.addEventListener('mouseup', () => { state.panStart = null; });
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    const all = seriesForTimeframe(current());
+    const next = (state.viewCount || all.length) + (event.deltaY > 0 ? 5 : -5);
+    state.viewCount = Math.max(20, Math.min(all.length, next));
+    drawChart();
+  }, { passive: false });
+  canvas.addEventListener('click', event => {
+    if (dragMoved) { dragMoved = false; return; }
+    const scale = state.chartScale;
+    if (!scale || state.drawTool === 'cursor') return;
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    if (py > scale.mainBottom || px < scale.pad.l || px > scale.cssW - scale.pad.r) return;
+    const price = scale.hi - ((py - scale.pad.t) / scale.plotH) * (scale.hi - scale.lo);
+    const xRatio = Math.max(0, Math.min(1, (px - scale.pad.l) / scale.plotW));
+    if (state.drawTool === 'hline') state.drawings.push({ type: 'hline', price });
+    if (state.drawTool === 'trend') {
+      if (!state.pendingTrend) state.pendingTrend = { xRatio, price };
+      else {
+        state.drawings.push({ type: 'trend', ...state.pendingTrend, x2Ratio: xRatio, price2: price });
+        state.pendingTrend = null;
+      }
+    }
+    drawChart();
+  });
 }
 
 function aiReply(text) {
@@ -549,8 +779,8 @@ async function persistProfile() {
 }
 
 function bind() {
-  $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; resetPlan(); renderAll(); await persistProfile(); });
-  $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); drawChart(); await persistProfile(); });
+  $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; resetPlan(); resetChartView(); renderAll(); await persistProfile(); });
+  $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); resetChartView(); drawChart(); await persistProfile(); });
   $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); });
   $('planBtn').addEventListener('click', submitPlan);
   $('approvePlanBtn').addEventListener('click', () => decidePlan('approved'));
@@ -572,6 +802,7 @@ function bind() {
   document.querySelectorAll('.nav a').forEach(link => link.addEventListener('click', () => {
     document.querySelectorAll('.nav a').forEach(item => item.classList.toggle('active', item === link));
   }));
+  bindChartTools();
   window.addEventListener('resize', drawChart);
 }
 

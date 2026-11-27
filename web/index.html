@@ -91,6 +91,20 @@
               <span class="badge" id="chartChange">--</span>
             </div>
           </div>
+          <div class="chart-toolbar" id="chartToolbar">
+            <div class="chart-tools">
+              <button type="button" data-chart-type="candle" class="active">Candles</button>
+              <button type="button" data-chart-type="line">Line</button>
+              <span class="tool-sep"></span>
+              <button type="button" data-tool="cursor" class="active">Cursor</button>
+              <button type="button" data-tool="hline">H-line</button>
+              <button type="button" data-tool="trend">Trend</button>
+              <span class="tool-sep"></span>
+              <button type="button" data-indicator="ma20" class="active">MA20</button>
+              <button type="button" data-indicator="ma50" class="active">MA50</button>
+              <button type="button" data-indicator="rsi">RSI</button>
+            </div>
+          </div>
           <canvas id="priceChart" height="320"></canvas>
           <div class="chart-meta" id="chartMeta"></div>
         </article>
