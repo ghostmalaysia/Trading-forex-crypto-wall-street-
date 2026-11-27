@@ -33,6 +33,7 @@ const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
   monitor: null, broker: null, backtest: null, paperOrders: [], screener: null, summary: null,
+  paperAccount: null, learning: null, research: null, decisions: [],
   liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null, auditLogs: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
@@ -741,20 +742,113 @@ function buildAIContext() {
     chart: { symbol: c.symbol, timeframe: state.timeframe, series: seriesForTimeframe(c) },
     lessons: state.lessons.map(l => l.insight),
     history: state.history.slice(-4),
-    preferences: { paperEquity: 10000 },
-    risk: { dailyLossPct: 0, openPositions: 0 },
+    preferences: { paperEquity: state.paperAccount?.equity ?? 100 },
+    risk: {
+      dailyLossPct: state.paperAccount?.dailyLossPct ?? 0,
+      openPositions: state.paperAccount?.openPositions ?? 0,
+    },
   };
 }
 
-async function askAI(message, mode = 'chat') {
+async function askAI(message, mode = 'chat', extra = {}) {
   const response = await fetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, mode, context: buildAIContext() }),
+    body: JSON.stringify({ message, mode, context: buildAIContext(), ...extra }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `AI request failed (${response.status})`);
   return data;
+}
+
+function renderPaperState() {
+  const account = state.paperAccount;
+  const capital = $('paperCapital');
+  if (capital && account) {
+    capital.textContent = `Paper $${Number(account.equity).toFixed(2)} / $${Number(account.startingCapital).toFixed(2)} • risk ${account.maxRiskPct}% • daily ${account.maxDailyLossPct}%`;
+    capital.classList.toggle('warn', !!account.blocked);
+  }
+  const learning = $('paperLearning');
+  if (!learning) return;
+  const lessons = state.learning?.entries
+    ? [...state.learning.entries['XAU/USD']?.lessons || [], ...state.learning.entries.DXY?.lessons || []].slice(0, 3)
+    : [];
+  learning.innerHTML = lessons.length
+    ? `<div class="risk-list">${lessons.map(item => `<div class="risk-item"><span>${escapeHtml(item)}</span></div>`).join('')}</div>`
+    : '<p class="muted">Pembelajaran paper belum tersedia. Evaluate order paper untuk mula melatih sistem.</p>';
+}
+
+async function loadPaperState() {
+  try {
+    const [accountResponse, learningResponse] = await Promise.all([
+      fetch('/api/paper/account', { cache: 'no-store' }),
+      fetch('/api/learning', { cache: 'no-store' }),
+    ]);
+    const account = await accountResponse.json();
+    const learning = await learningResponse.json();
+    if (accountResponse.ok) state.paperAccount = account;
+    if (learningResponse.ok) state.learning = learning;
+    renderPaperState();
+  } catch { renderPaperState(); }
+}
+
+async function runResearch() {
+  const button = $('researchBtn');
+  if (button) button.disabled = true;
+  $('researchBody').innerHTML = '<p class="muted">AI sedang menyusun laporan terperinci...</p>';
+  try {
+    const data = await askAI('Hasilkan analisis mendalam untuk simbol ini.', 'research');
+    state.research = data;
+    $('researchBody').innerHTML = `<div class="research-report">${escapeHtml(data.reply).replace(/\n/g, '<br>')}</div>`;
+    audit('ai_research_generated', 'research', { symbol: state.selected, provider: data.provider });
+    await loadPaperState();
+  } catch (error) {
+    $('researchBody').innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function addDecision(role, content) {
+  const log = $('decisionLog');
+  if (!log) return;
+  if (!log.dataset.loaded) {
+    log.dataset.loaded = 'true';
+    log.innerHTML = '<p class="muted">AI akan menjelaskan sebab cadangan BUY/SELL/NO TRADE berdasarkan graf, risk gate, dan pembelajaran paper.</p>';
+  }
+  const row = document.createElement('div');
+  row.className = `chat-msg ${role}`;
+  const label = document.createElement('strong');
+  label.textContent = role === 'user' ? 'YOU' : 'AI DECISION';
+  const body = document.createElement('span');
+  body.textContent = content;
+  row.append(label, body);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  state.decisions.push({ role, content });
+}
+
+async function runDecision(text) {
+  const form = $('decisionForm');
+  const button = form?.querySelector('button');
+  if (button) button.disabled = true;
+  addDecision('user', text);
+  try {
+    const data = await askAI(text, 'explain', { plan: state.currentPlan?.plan || null });
+    addDecision('ai', data.reply);
+    const badge = $('decisionBadge');
+    if (badge && data.decision) {
+      badge.textContent = `${data.decision.action} • ${data.decision.decision}`;
+      badge.classList.toggle('warn', !data.decision.eligible);
+    }
+    audit('ai_decision_explained', 'decision', { symbol: state.selected, action: data.decision?.action || null });
+    return data;
+  } catch (error) {
+    addDecision('ai', `Gagal menjana penjelasan: ${error.message}`);
+    return null;
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function renderPlan(data) {
@@ -818,6 +912,7 @@ async function submitPlan() {
     state.currentPlan = data;
     renderPlan(data);
     audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
+    await runDecision(`Kenapa AI mencadangkan ${data.plan?.bias || 'neutral'} untuk ${state.selected}?`);
     const index = state.history.push({ role: 'ai', content: data.reply || 'AI plan generated.' }) - 1;
     addMsg('ai', data.reply || 'AI plan generated.', index);
     if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply || 'AI plan generated.');
@@ -1027,12 +1122,14 @@ async function executeAgentPaperOrder() {
     const evaluation = await agentRequest('/api/paper/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order, price: current().price }),
+      body: JSON.stringify({ order, price: current().price, plan: state.currentPlan?.plan || null }),
     });
     order.evaluation = evaluation;
     state.paperOrders = [order, ...state.paperOrders].slice(0, 30);
+    state.paperAccount = evaluation.account || state.paperAccount;
     $('paperConfirm').value = '';
     renderAgent();
+    await loadPaperState();
     audit('agent_paper_order', 'agent', { orderId: order.id, symbol: order.symbol, outcome: evaluation.outcome });
     if (window.SupabaseMemory?.enabled) {
       window.SupabaseMemory.savePaperOrder(order).catch(() => {});
@@ -1218,6 +1315,7 @@ async function initChat() {
         state.currentPlan = data;
         renderPlan(data);
         audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
+        await runDecision(`Kenapa AI mencadangkan ${data.plan?.bias || 'neutral'} untuk ${state.selected}?`);
       }
       const aiIndex = state.history.push({ role: 'ai', content: data.reply }) - 1;
       addMsg('ai', data.reply, aiIndex);
@@ -1537,6 +1635,14 @@ function bind() {
   $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); });
   $('planBtn').addEventListener('click', submitPlan);
   $('summaryBtn')?.addEventListener('click', generateSummary);
+  $('researchBtn')?.addEventListener('click', runResearch);
+  $('decisionForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('decisionInput');
+    const text = input.value.trim() || 'Kenapa AI cadang buy atau sell untuk simbol ini?';
+    input.value = '';
+    await runDecision(text);
+  });
   $('saveChartTemplateBtn')?.addEventListener('click', saveChartTemplate);
   $('applyChartTemplateBtn')?.addEventListener('click', applyChartTemplate);
   $('deleteChartTemplateBtn')?.addEventListener('click', deleteChartTemplate);
@@ -1596,6 +1702,7 @@ async function boot() {
   renderMarketSummary();
   tickClock();
   checkAiStatus();
+  loadPaperState();
   checkServerSession();
   await initChat();
   await loadAlerts();

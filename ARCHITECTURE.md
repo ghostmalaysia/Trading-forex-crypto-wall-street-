@@ -50,12 +50,15 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 - **Capabilities**:
   - Market/news summarization
   - Watchlist monitoring and alert explanations
-  - Strategy/study assistant (educational, not financial advice)
-  - Task automation suggestions (with confirmation)
+   - Strategy/study assistant (educational, not financial advice)
+   - Deep research reports and a Trading Room that explains BUY/SELL/NO TRADE proposals
+   - Task automation suggestions (with confirmation)
 - **Memory/Learning**:
-  - Store user profile, risk preferences, watched assets in Supabase
-  - Log AI recommendations and outcomes for evaluation
-  - Retrieval layer (embeddings/pgvector later; simple DB first)
+   - Store user profile, risk preferences, watched assets in Supabase
+   - Log AI recommendations and outcomes for evaluation
+   - Auto-update per-symbol paper lessons from evaluated XAU/USD and DXY outcomes
+   - Retrieval layer (embeddings/pgvector later; simple DB first)
+- **Paper capital guard**: `ai/paper-account.mjs` enforces a simulated $100 account, 1% risk/trade, 3% daily loss cap, and 2 open positions before any paper fill.
 
 ### Agent-Native Interface (CLI-Anything reference)
 - **Pattern**: `cli/tradewall.mjs` exposes core workflows as a JSON CLI using the shared API client (inspired by [CLI-Anything](https://github.com/HKUDS/CLI-Anything)).

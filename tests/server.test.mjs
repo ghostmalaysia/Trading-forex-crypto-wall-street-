@@ -36,7 +36,11 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
   const stubPort = await freePort();
   const appPort = await freePort();
   const auditFile = '/tmp/opencode/tradewall-test-audit.jsonl';
+  const paperStateFile = '/tmp/opencode/tradewall-test-paper.json';
+  const learningFile = '/tmp/opencode/tradewall-test-learning.json';
   await rm(auditFile, { force: true });
+  await rm(paperStateFile, { force: true });
+  await rm(learningFile, { force: true });
 
   const stub = createServer((req, res) => {
     const close = Array.from({ length: 24 }, (_, index) => 100 + index);
@@ -64,6 +68,8 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
       LONGBRIDGE_BIN: '/bin/false',
       MARKET_DATA_BASE_URL: `http://127.0.0.1:${stubPort}`,
       AUDIT_LOG_FILE: auditFile,
+      PAPER_STATE_FILE: paperStateFile,
+      PAPER_LEARNING_FILE: learningFile,
       MONITOR_DISABLED: 'true',
       ENABLE_LIVE_TRADING: 'true',
       LIVE_ADMIN_TOKEN: 'test-admin-token',

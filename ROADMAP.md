@@ -89,7 +89,7 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] In-app audit trail viewer on web and mobile, plus chain verification
 - [x] Automated CLI, HTTP, and shared-client coverage
 
-**Outcome:** Operators and agents can inspect and drive TradeWall through machine-readable commands without secrets in outputs; audit history is visible in-app and verifiable from CLI/API.
+**Outcome:** Operators and agents can inspect and drive MIM VENTURES through machine-readable commands without secrets in outputs; audit history is visible in-app and verifiable from CLI/API.
 
 ## Phase 7 - Production Integration Layer
 - [x] `metaapi-http` live execution/reconciliation adapter driven by server-only endpoints and credentials
@@ -102,3 +102,13 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] Automated tests for every new module plus updated API/CLI coverage
 
 **Outcome:** All deferred integration items now have working, fail-closed implementations. External value still depends on credentials/providers (MetaApi endpoints, licensed feed, Expo EAS project ID, Supabase project, and push admin token).
+
+## Phase 8 - Autonomous Paper Analyst and Trading Room
+- [x] $100 paper account with 1% risk/trade, 3% daily loss cap, and 2-position exposure cap
+- [x] Self-updating paper lessons per XAU/USD and DXY, with cross-asset USD/gold notes
+- [x] Deep research mode with nine-section evidence, scenario, sizing, and risk report
+- [x] AI Trading Room explaining why BUY, SELL, or NO TRADE was proposed
+- [x] Web and mobile panels for capital, learning, deep research, and decision chat
+- [x] Automated unit and HTTP coverage for paper caps, learning, research, and explanations
+
+**Outcome:** Public users can trial an educational paper analyst that learns from evaluated outcomes and explains every proposal. Real live trading remains opt-in, credential-dependent, approval-gated, and outside the public demo.

@@ -63,6 +63,8 @@ export function createApiClient({ baseUrl, fetchImpl = fetch } = {}) {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+    paperAccount: () => request('/api/paper/account'),
+    learning: () => request('/api/learning'),
     liveStatus: () => request('/api/live/status'),
     liveProposal: (input, headers) => request('/api/live/proposal', {
       method: 'POST',
@@ -97,9 +99,9 @@ export function createApiClient({ baseUrl, fetchImpl = fetch } = {}) {
       return request(`/api/audit${query ? `?${query}` : ''}`);
     },
     verifyAudit: () => request('/api/audit/verify'),
-    askAi: (message, mode, context) => request('/api/ai', {
+    askAi: (message, mode, context, extra = {}) => request('/api/ai', {
       method: 'POST',
-      body: JSON.stringify({ message, mode, context }),
+      body: JSON.stringify({ message, mode, context, ...extra }),
     }),
   };
 }

@@ -44,10 +44,14 @@ export default function App() {
   }), []);
   const [cloudState, setCloudState] = useState({ configured: false, signedIn: false, userKey: null, url: null });
   const [health, setHealth] = useState(null);
+  const [paperAccount, setPaperAccount] = useState(null);
+  const [learning, setLearning] = useState(null);
   const [market, setMarket] = useState(null);
   const [feed, setFeed] = useState(null);
   const [plan, setPlan] = useState(null);
   const [marketSummary, setMarketSummary] = useState(null);
+  const [research, setResearch] = useState(null);
+  const [decisions, setDecisions] = useState([]);
   const [agentMonitor, setAgentMonitor] = useState(null);
   const [broker, setBroker] = useState(null);
   const [agentBacktest, setAgentBacktest] = useState(null);
@@ -116,7 +120,7 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker, nextLiveStatus, nextAuditLogs] = await Promise.all([
+      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker, nextLiveStatus, nextAuditLogs, nextPaperAccount, nextLearning] = await Promise.all([
         apiClient.health(),
         apiClient.market(),
         apiClient.news(),
@@ -124,8 +128,12 @@ export default function App() {
         apiClient.brokerStatus(),
         apiClient.liveStatus(),
         apiClient.auditLogs({ limit: Number(auditLimit) || 50, event: auditEvent.trim() || null }),
+        apiClient.paperAccount(),
+        apiClient.learning(),
       ]);
       setHealth(nextHealth);
+      setPaperAccount(nextPaperAccount);
+      setLearning(nextLearning);
       setMarket(nextMarket);
       setFeed(nextFeed);
       setAgentMonitor(nextMonitor);
@@ -198,13 +206,20 @@ export default function App() {
       timeframe: '1D',
       dataSource: market.provider === 'mock' ? 'mock' : 'market',
       chart: { symbol: item.symbol, series: item.series || [] },
+      lessons: [
+        ...(learning?.entries?.['XAU/USD']?.lessons || []),
+        ...(learning?.entries?.DXY?.lessons || []),
+      ].slice(0, 6),
       history: messages.slice(-10).map(({ role, content }) => ({ role, content })),
-      preferences: { paperEquity: 10000 },
-      risk: { dailyLossPct: 0, openPositions: 0 },
+      preferences: { paperEquity: paperAccount?.equity ?? 100 },
+      risk: {
+        dailyLossPct: paperAccount?.dailyLossPct ?? 0,
+        openPositions: paperAccount?.openPositions ?? 0,
+      },
     };
   }
 
-  const askAi = useCallback(async (mode, override) => {
+  const askAi = useCallback(async (mode, override, extra = {}) => {
     const context = buildContext();
     if (!context) { setError('Market data is not ready yet.'); return; }
     const message = String(override ?? question).trim()
@@ -214,9 +229,20 @@ export default function App() {
     try {
       setMessages(previous => [...previous, { role: 'user', content: message }]);
       if (cloudState.signedIn) cloud.saveChat('user', message).catch(() => {});
-      const result = await apiClient.askAi(message, mode, context);
+      const result = await apiClient.askAi(message, mode, context, extra);
       setMessages(previous => [...previous, { role: 'ai', content: result.reply }]);
-      if (mode === 'plan') setPlan(result);
+      if (mode === 'plan') {
+        setPlan(result);
+        const prompt = `Kenapa AI mencadangkan ${result.plan?.bias || 'neutral'} untuk ${context.selected}?`;
+        try {
+          const explanation = await apiClient.askAi(prompt, 'explain', context, { plan: result.plan });
+          setDecisions(previous => [...previous, { role: 'user', content: prompt }, { role: 'ai', content: explanation.reply }].slice(-20));
+        } catch {}
+      }
+      if (mode === 'research') setResearch(result);
+      if (mode === 'explain') {
+        setDecisions(previous => [...previous, { role: 'user', content: message }, { role: 'ai', content: result.reply }].slice(-20));
+      }
       if (cloudState.signedIn) cloud.saveChat('ai', result.reply).catch(() => {});
     } catch (requestError) {
       setError(requestError.message || 'AI request failed');
@@ -229,6 +255,16 @@ export default function App() {
     setTab('ai');
     askAi('plan', 'Bina cadangan paper trading untuk simbol ini.');
   }, [askAi]);
+
+  const handleResearch = useCallback(() => {
+    setTab('ai');
+    askAi('research', 'Hasilkan analisis mendalam untuk simbol ini.');
+  }, [askAi]);
+
+  const handleExplain = useCallback((prompt) => {
+    setTab('ai');
+    askAi('explain', prompt || `Kenapa AI mencadangkan ${plan?.plan?.bias || 'neutral'} untuk ${selected}?`, { plan: plan?.plan || null });
+  }, [askAi, plan, selected]);
 
   const handleMarketSummary = useCallback(() => run(async () => {
     setMarketSummary(await apiClient.marketSummary());
@@ -481,6 +517,11 @@ export default function App() {
         error={error}
         onAsk={askAi}
         onPlan={handlePlan}
+        onResearch={handleResearch}
+        onExplain={handleExplain}
+        decisions={decisions}
+        research={research}
+        paperAccount={paperAccount}
         plan={plan}
         summary={marketSummary}
         onSummary={handleMarketSummary}

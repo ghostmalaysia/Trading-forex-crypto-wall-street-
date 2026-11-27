@@ -41,7 +41,11 @@ test('HTTP endpoints serve screener, summaries, push, and sessions', { timeout: 
   const stubPort = await freePort();
   const appPort = await freePort();
   const auditFile = '/tmp/opencode/tradewall-test-integrations-audit.jsonl';
+  const paperStateFile = '/tmp/opencode/tradewall-test-integrations-paper.json';
+  const learningFile = '/tmp/opencode/tradewall-test-integrations-learning.json';
   await rm(auditFile, { force: true });
+  await rm(paperStateFile, { force: true });
+  await rm(learningFile, { force: true });
 
   const seen = { push: [], auth: [] };
   const stub = createServer((req, res) => {
@@ -102,6 +106,8 @@ test('HTTP endpoints serve screener, summaries, push, and sessions', { timeout: 
       LONGBRIDGE_BIN: '/bin/false',
       MARKET_DATA_BASE_URL: `http://127.0.0.1:${stubPort}`,
       AUDIT_LOG_FILE: auditFile,
+      PAPER_STATE_FILE: paperStateFile,
+      PAPER_LEARNING_FILE: learningFile,
       MONITOR_DISABLED: 'true',
       EXPO_PUSH_URL: `http://127.0.0.1:${stubPort}/push`,
       PUSH_ADMIN_TOKEN: 'test-push-token',

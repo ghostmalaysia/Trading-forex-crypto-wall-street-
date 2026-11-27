@@ -166,9 +166,22 @@
           <div class="panel-head">
             <h3>AI Assistant</h3>
             <span class="badge warn">XAU/USD • DXY only</span>
+            <span class="badge" id="paperCapital">Paper $100 • risk 1% • daily 3%</span>
           </div>
+          <div id="paperLearning" class="plan-body"><p class="muted">Pembelajaran paper belum tersedia.</p></div>
           <div id="marketSummary" class="plan-body"><p class="muted">Tiada ringkasan lagi.</p></div>
           <button id="summaryBtn" type="button">Generate Market Summary</button>
+          <button id="researchBtn" type="button">Analisis Mendalam (AI)</button>
+          <div id="researchBody" class="plan-body"><p class="muted">Tekan “Analisis Mendalam” untuk laporan terperinci dengan bukti, senario, pembelajaran, dan had modal.</p></div>
+          <div class="panel-head decision-head">
+            <h4>AI Trading Room</h4>
+            <span class="badge" id="decisionBadge">Kenapa buy / sell?</span>
+          </div>
+          <div id="decisionLog" class="chat-log decision-log"></div>
+          <form id="decisionForm" class="chat-form">
+            <input id="decisionInput" type="text" placeholder="Tanya: kenapa AI cadang buy/sell?" autocomplete="off" />
+            <button type="submit">Ask</button>
+          </form>
           <div id="chatLog" class="chat-log"></div>
           <form id="chatForm" class="chat-form">
             <input id="chatInput" type="text" placeholder="Tanya AI: analisis emas/DXY, risiko, atau cadangan..." autocomplete="off" />

@@ -85,7 +85,7 @@ tbody tr{cursor:pointer} tbody tr:hover{background:rgba(61,139,255,.07)} tbody t
 .chat-form{display:flex;gap:7px}.chat-form input{flex:1;min-width:0}.chat-form button{background:linear-gradient(180deg,#2f7fe8,#1e5fbe);border-color:#3d8bff;color:#fff;text-transform:uppercase;letter-spacing:.08em;font-size:11px}
 .disclaimer{color:var(--muted);font-size:10px;margin:8px 0 0;font-family:var(--mono)}
 .plan-panel{min-height:342px;display:flex;flex-direction:column}
-.plan-body{font-size:12px;line-height:1.5;color:var(--muted);flex:1}
+.plan-body{font-size:12px;line-height:1.5;color:var(--muted);flex:1}.research-report{font-size:12px;line-height:1.65;color:#cbd5e1;max-height:420px;overflow:auto;padding-right:6px}.research-report strong{color:var(--gold)}.decision-head{margin-top:10px}.decision-log{max-height:260px;min-height:120px}
 .plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0}
 .plan-cell{padding:8px;border:1px solid #162237;border-radius:4px;background:#0a111c;font-family:var(--mono);font-size:11px}
 .plan-cell span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.09em;margin-bottom:4px}

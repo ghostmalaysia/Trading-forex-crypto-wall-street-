@@ -116,6 +116,12 @@ Paper execution only accepts an approved plan and the exact confirmation string 
 
 Configure paper monitoring with `MONITOR_RULES` (JSON array), `MONITOR_INTERVAL_SECONDS` (minimum 30), and `MONITOR_ZSCORE`. `GROQ_API_KEY` remains server-side only.
 
+### Paper capital, deep research, and AI Trading Room
+
+The public demo runs on a simulated `$100` account: maximum 1% risk per trade, 3% daily loss cap, and 2 open positions. Override with `PAPER_STARTING_CAPITAL`, `PAPER_MAX_RISK_PCT`, `PAPER_MAX_DAILY_LOSS_PCT`, and `PAPER_MAX_OPEN_POSITIONS`. State is stored in `data/paper-account.json` and exposed via `GET /api/paper/account`; `/api/health` includes a summary.
+
+`POST /api/ai` now accepts `mode:"research"` for a structured nine-section report (evidence, interpretation, USD/gold macro checklist, learned paper lessons, scenarios, paper sizing, risk/invalidation, and confidence) and `mode:"explain"` for the AI Trading Room. The Trading Room answers “why BUY/SELL/NO TRADE?” from chart evidence, deterministic risk checks, and paper outcomes; it never places an order. `GET /api/learning` returns self-updating XAU/USD and DXY lessons; outcomes recorded by `POST /api/paper/evaluate` feed the next analysis. Files default to `data/paper-learning.json` and can be overridden with `PAPER_LEARNING_FILE`.
+
 ## Guarded live workflow
 
 Live trading is opt-in and fail-closed. The kill switch is armed unless `LIVE_KILL_SWITCH=false`. Readiness requires `ENABLE_LIVE_TRADING=true`, `METAAPI_TOKEN`, `METAAPI_ACCOUNT_ID`, `LIVE_ADMIN_TOKEN`, `LIVE_APPROVAL_SECRET`, and an available adapter. Tokens never leave the server; `/api/live/status` reports only configuration status and adapter metadata.

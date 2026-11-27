@@ -105,7 +105,7 @@ export function buildPlan(analysis, context) {
   const stopLoss = round(entry * (1 - direction * stopPct / 100));
   const takeProfit = round(entry * (1 + direction * stopPct * 2 / 100));
   const riskPct = 1;
-  const equity = Number(context?.preferences?.paperEquity) || 10000;
+  const equity = Number(context?.preferences?.paperEquity) || 100;
   const stopDistance = Math.abs(entry - stopLoss);
   const units = stopDistance > 0 ? round(equity * riskPct / 100 / stopDistance) : 0;
   return {
@@ -140,7 +140,7 @@ export function normalizePlan(raw, analysis, context) {
   if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(stopLoss) || !Number.isFinite(takeProfit)) return fallback;
   if ((stopLoss - entry) * direction >= 0 || (takeProfit - entry) * direction <= 0) return fallback;
   const riskPct = Math.min(1, Math.max(0, Number(raw.riskPct) || 0));
-  const equity = Number(context?.preferences?.paperEquity) || 10000;
+  const equity = Number(context?.preferences?.paperEquity) || 100;
   const stopDistance = Math.abs(entry - stopLoss);
   const units = stopDistance > 0 ? round(equity * riskPct / 100 / stopDistance) : 0;
   const conditions = Array.isArray(raw.conditions)

@@ -84,14 +84,20 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - `next/` provides the App Router migration scaffold with an API proxy; the static `web/` MVP remains supported.
 - Optional server-side HttpOnly sessions coexist with the browser Supabase client; no browser secret handling was introduced.
 
-## 13. Remaining validation with real credentials
+## 13. Autonomous paper analyst and Trading Room (done)
+- `GET /api/paper/account` reports the simulated `$100` account, 1% per-trade cap, 3% daily loss cap, and 2-position limit; `GET /api/learning` reports self-updating XAU/USD and DXY lessons.
+- `POST /api/paper/evaluate` now settles paper PnL and records an outcome; each outcome updates per-symbol/bias statistics and feeds the next AI prompt.
+- `POST /api/ai` accepts `mode:"research"` for the nine-section deep report and `mode:"explain"` for the AI Trading Room answer to “why BUY/SELL/NO TRADE?”.
+- Web and mobile expose capital, learning, deep research, and a dedicated decision chat. No live order is ever placed from these flows.
+
+## 14. Remaining validation with real credentials
 - Apply `202611300001_push_tokens.sql` and configure `PUSH_ADMIN_TOKEN` plus the mobile EAS project ID.
 - Configure `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SESSION_COOKIE_SECRET`, and verify sign-in/session refresh against the real project.
 - Configure MetaApi URLs/token/account and test proposal -> approval -> order -> reconciliation with a demo account.
 - Configure a licensed market endpoint/key and verify symbol mapping and provider terms.
 - Install `next/` dependencies and run `npm run dev` with `MIM_VENTURES_UPSTREAM` (or legacy `TRADEWALL_UPSTREAM`) pointed at `server.mjs`.
 
-## 14. Safety checklist
+## 15. Safety checklist
 - Keep AI output informational only.
 - Paper is the default; guarded live is fail-closed and requires admin token, approval secret, explicit approvals, and a disarmed kill switch.
 - Push sends require `SEND PUSH` confirmation and a server-only admin token; session mutations are same-origin only.

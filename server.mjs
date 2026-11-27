@@ -6,7 +6,11 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.mjs';
 import { complete, providerName, modelName } from './ai/provider.mjs';
-import { analyzeChart, normalizePlan, riskGate } from './ai/plan.mjs';
+import { analyzeChart, buildPlan, normalizePlan, riskGate } from './ai/plan.mjs';
+import { buildResearch } from './ai/research.mjs';
+import { decisionAction, decisionExplanation } from './ai/decision.mjs';
+import { guardPaperOrder, paperAccountStatus, paperRiskContext, reservePaperOrder, settlePaperOrder } from './ai/paper-account.mjs';
+import { learningDigest, learningStatus, recordPaperOutcome } from './ai/learning.mjs';
 import { CALENDAR, FOCUS, NEWS } from './shared/feed-data.js';
 import { detectAnomalies, evaluateRules, normalizeRule } from './ai/monitor.mjs';
 import { backtestSmaCross } from './ai/backtest.mjs';
@@ -562,6 +566,7 @@ async function runReconciliation() {
 async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || `${host}:${port}`}`);
   if (url.pathname === '/api/health') {
+    const paper = paperAccountStatus();
     return sendJson(res, 200, {
       provider: rpcReady ? 'longbridge' : 'mock',
       longbridgeAvailable: rpcReady,
@@ -572,6 +577,13 @@ async function handle(req, res) {
       marketAdapter: marketCache.payload?.adapter || (isLicensedAdapter() ? 'licensed' : 'indicative'),
       push: pushStatus(),
       session: { configured: sessionConfigState.configured, cookieName: sessionConfigState.cookieName },
+      paper: {
+        mode: paper.mode,
+        equity: paper.equity,
+        startingCapital: paper.startingCapital,
+        dailyLossPct: paper.dailyLossPct,
+        blocked: paper.blocked,
+      },
     });
   }
   if (url.pathname === '/api/market') {
@@ -819,21 +831,32 @@ async function handle(req, res) {
     const text = await readFile(auditFile, 'utf8').catch(() => '');
     return sendJson(res, 200, verifyAuditChain(text));
   }
+  if (url.pathname === '/api/paper/account') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, paperAccountStatus());
+  }
+  if (url.pathname === '/api/learning') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, learningStatus());
+  }
   if (url.pathname === '/api/paper/order') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
     let payload;
     try { payload = await readJsonBody(req); }
     catch (error) { return sendJson(res, 400, { error: error.message }); }
-    const broker = payload.broker === 'metaapi' ? brokers.metaapi : brokers.paper;
+    const isPaper = payload.broker !== 'metaapi';
+    const broker = isPaper ? brokers.paper : brokers.metaapi;
     try {
+      if (isPaper) guardPaperOrder();
       const order = await broker.placeOrder({
         plan: payload.plan,
         risk: payload.risk,
         context: payload.context,
         confirmation: payload.confirmation,
       });
-      await appendAudit('paper_order_simulated', { orderId: order.id, symbol: order.symbol, side: order.side, provider: 'paper-simulator' });
-      return sendJson(res, 200, order);
+      const account = isPaper ? reservePaperOrder(order) : paperAccountStatus();
+      await appendAudit('paper_order_simulated', { orderId: order.id, symbol: order.symbol, side: order.side, provider: isPaper ? 'paper-simulator' : 'metaapi-http', equity: account.equity });
+      return sendJson(res, 200, { ...order, account });
     } catch (error) {
       await appendAudit('paper_order_rejected', { reason: String(error.message).slice(0, 160) });
       return sendJson(res, 400, { error: error.message });
@@ -846,8 +869,17 @@ async function handle(req, res) {
     catch (error) { return sendJson(res, 400, { error: error.message }); }
     try {
       const result = evaluatePaperOrder(payload.order, payload.price);
-      await appendAudit('paper_order_evaluated', { orderId: result.orderId, outcome: result.outcome, pnl: result.pnl });
-      return sendJson(res, 200, result);
+      const account = settlePaperOrder(payload.order, result);
+      const learning = recordPaperOutcome(payload.order, result, payload.plan || {});
+      await appendAudit('paper_order_evaluated', {
+        orderId: result.orderId,
+        outcome: result.outcome,
+        pnl: result.pnl,
+        equity: account.equity,
+        dailyLossPct: account.dailyLossPct,
+        samples: learning.entries[result.symbol]?.samples || 0,
+      });
+      return sendJson(res, 200, { ...result, account, learning: { updatedAt: learning.updatedAt, crossAsset: learning.crossAsset } });
     } catch (error) {
       return sendJson(res, 400, { error: error.message });
     }
@@ -866,14 +898,57 @@ async function handle(req, res) {
     catch (error) { return sendJson(res, 400, { error: error.message === 'Request body too large' ? error.message : 'Invalid JSON body' }); }
     const message = typeof payload.message === 'string' ? payload.message.trim().slice(0, 2000) : '';
     if (!message) return sendJson(res, 400, { error: 'Provide a message' });
-    const mode = payload.mode === 'plan' ? 'plan' : 'chat';
+    const mode = ['plan', 'research', 'explain'].includes(payload.mode) ? payload.mode : 'chat';
     const context = sanitizeContext(payload.context);
+    const paper = paperAccountStatus();
+    const paperRisk = paperRiskContext();
+    context.preferences = { ...context.preferences, ...paperRisk.preferences };
+    context.risk = { ...context.risk, ...paperRisk.risk };
+    context.paperAccount = paper;
+    context.lessons = [...learningDigest(), ...context.lessons].slice(0, 10);
     const analysis = analyzeChart(context);
     const knowledge = await platformKnowledge();
-    const enriched = { ...context, chartAnalysis: analysis };
-    const system = mode === 'plan' ? planSystemPrompt(knowledge, enriched) : systemPrompt(knowledge, enriched);
-    const messages = [{ role: 'system', content: system }, ...context.history, { role: 'user', content: message }];
     try {
+      if (mode === 'research') {
+        const result = await buildResearch(analysis, context, {
+          complete: messages => complete(messages),
+          knowledge,
+        });
+        await appendAudit('ai_request', {
+          client,
+          mode,
+          provider: result.provider,
+          model: result.model,
+          symbol: context.selected || analysis.symbol || null,
+          decision: null,
+        });
+        return sendJson(res, 200, { ...result, analysis });
+      }
+      if (mode === 'explain') {
+        const plan = payload.plan && typeof payload.plan === 'object'
+          ? normalizePlan(payload.plan, analysis, context)
+          : buildPlan(analysis, context);
+        const risk = riskGate(plan, analysis, context);
+        const reply = decisionExplanation(analysis, plan, risk, context);
+        await appendAudit('ai_decision_explained', {
+          client,
+          symbol: context.selected || analysis.symbol || null,
+          decision: risk.decision,
+        });
+        return sendJson(res, 200, {
+          reply,
+          provider: 'rules',
+          model: 'decision-rules',
+          plan,
+          risk,
+          analysis,
+          decision: decisionAction(plan, risk),
+          disclaimer: 'Informational only; not financial advice.',
+        });
+      }
+      const enriched = { ...context, chartAnalysis: analysis };
+      const system = mode === 'plan' ? planSystemPrompt(knowledge, enriched) : systemPrompt(knowledge, enriched);
+      const messages = [{ role: 'system', content: system }, ...context.history, { role: 'user', content: message }];
       const result = await complete(messages);
       const response = { reply: result.reply, provider: result.provider, model: result.model, disclaimer: 'Informational only; not financial advice.' };
       if (mode === 'plan') {
