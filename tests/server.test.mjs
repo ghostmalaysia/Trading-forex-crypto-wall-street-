@@ -234,6 +234,14 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(auditVerify.ok, true);
     assert.ok(auditVerify.count > 0);
 
+    const auditLogs = await (await fetch(`${base}/api/audit?limit=5`)).json();
+    assert.equal(auditLogs.entries.length, 5);
+    assert.ok(auditLogs.count >= auditLogs.entries.length);
+    assert.ok(auditLogs.entries.every(entry => typeof entry.hash === 'string'));
+    const filteredAudit = await (await fetch(`${base}/api/audit?event=live_order_result`)).json();
+    assert.ok(filteredAudit.entries.length > 0);
+    assert.ok(filteredAudit.entries.every(entry => entry.event === 'live_order_result'));
+
     const invalid = await fetch(`${base}/api/ai`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
     assert.equal(invalid.status, 400);
 

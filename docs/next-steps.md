@@ -64,7 +64,13 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - `POST /api/live/kill-switch` arms by default; disarming requires `DISABLE KILL SWITCH` and an admin token. `POST /api/live/reconcile` summarizes local vs broker order drift.
 - `GET /api/audit/verify` verifies the SHA-256 hash chain in `data/audit.jsonl`. Signed-in users store live event metadata in the RLS-protected `live_events` table; approval tokens are never stored.
 
-## 11. Recommended next implementation
+## 11. Agent-native operator layer (done)
+- `npm run cli -- help` lists machine-readable commands. Read-only examples: `health`, `market`, `watchlist`, `news`, `monitor`, `broker`, `audit logs`, `audit verify`, `live status`, and `ai --message "..."`.
+- Write commands require exact confirmations: `EXECUTE PAPER`, `APPROVE LIVE`, `EXECUTE LIVE`, and `DISABLE KILL SWITCH`. Guarded-live commands require `--admin-token` or `TRADEWALL_LIVE_ADMIN_TOKEN`; tokens are never printed.
+- `GET /api/audit?limit=50&event=live_order_result` returns newest hash-chained entries with optional filters. Web and mobile Agent Lab expose the same audit trail plus chain verification.
+- Set `TRADEWALL_API_BASE_URL` or pass `--base` to target a non-default server. The CLI uses `shared/api-client.js`, so it stays in sync with the web/mobile API contract.
+
+## 12. Recommended next implementation
 - Wire a real MetaApi/MT5 adapter under `ai/adapters/` and validate it with a demo account.
 - Add a screener, saved drawing templates, and a real economic calendar provider.
 - Replace the GC=F proxy with a licensed spot XAU/USD feed and a real DXY feed.
@@ -72,7 +78,7 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
 
-## 12. Safety checklist
+## 13. Safety checklist
 - Keep AI output informational only.
 - Paper is the default; guarded live is fail-closed and requires admin token, approval secret, explicit approvals, and a disarmed kill switch.
 - Keep API keys in environment variables on the server.

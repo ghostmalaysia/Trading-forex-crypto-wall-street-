@@ -80,3 +80,12 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] Immutable hash-chained audit log for proposals, approvals, orders, broker responses, and verification
 
 **Outcome:** Guarded live scaffolding is ready and fail-closed. A real live broker adapter plus server credentials must still be configured; every order requires explicit admin/approval confirmation and a fresh risk check.
+
+## Phase 6 - Agent-Native Operator Layer
+- [x] JSON CLI (`npm run cli -- ...`) with read-only commands for health, market, watchlist, news, monitor, broker, audit, and AI
+- [x] Guarded CLI write commands with exact confirmations and admin-token headers for paper/live workflows
+- [x] Filterable `GET /api/audit` endpoint for hash-chained audit entries
+- [x] In-app audit trail viewer on web and mobile, plus chain verification
+- [x] Automated CLI, HTTP, and shared-client coverage
+
+**Outcome:** Operators and agents can inspect and drive TradeWall through machine-readable commands without secrets in outputs; audit history is visible in-app and verifiable from CLI/API. Real broker credentials, licensed feeds, push tokens, and production auth remain future work.

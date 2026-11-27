@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
+    "cli": "node cli/tradewall.mjs",
     "test": "node --test tests/*.test.mjs"
   }
 }

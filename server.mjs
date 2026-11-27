@@ -12,7 +12,7 @@ import { detectAnomalies, evaluateRules, normalizeRule } from './ai/monitor.mjs'
 import { backtestSmaCross } from './ai/backtest.mjs';
 import { evaluatePaperOrder, simulateFill } from './ai/execution.mjs';
 import { brokerStatus, brokers } from './ai/broker.mjs';
-import { auditHash, GENESIS_HASH, stripChainFields, verifyAuditChain } from './ai/audit-chain.mjs';
+import { auditHash, GENESIS_HASH, parseAuditLines, stripChainFields, verifyAuditChain } from './ai/audit-chain.mjs';
 import { evaluateLiveRisk, livePolicy } from './ai/live-risk.mjs';
 import { tokenVaultStatus } from './ai/token-vault.mjs';
 import { createApproval, safeEqual, verifyApproval } from './ai/live-approval.mjs';
@@ -662,6 +662,19 @@ async function handle(req, res) {
     const admin = liveAdmin(req, payload);
     if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
     return sendJson(res, 200, await runReconciliation());
+  }
+  if (url.pathname === '/api/audit') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    await auditQueue;
+    const text = await readFile(auditFile, 'utf8').catch(() => '');
+    const eventFilter = String(url.searchParams.get('event') || '').trim();
+    const parsed = parseAuditLines(text);
+    const entries = parsed
+      .map(row => row.value)
+      .filter(entry => entry && typeof entry === 'object' && (!eventFilter || entry.event === eventFilter))
+      .reverse()
+      .slice(0, Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200));
+    return sendJson(res, 200, { entries, count: parsed.length, event: eventFilter || null });
   }
   if (url.pathname === '/api/audit/verify') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

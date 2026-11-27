@@ -37,6 +37,7 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
   await client.executeLive({ approval: { id: 'apr-1' }, confirmation: 'EXECUTE LIVE' }, adminHeaders);
   await client.setLiveKillSwitch({ enabled: true }, adminHeaders);
   await client.reconcileLive({}, adminHeaders);
+  await client.auditLogs({ limit: 5, event: 'paper_order_simulated' });
   await client.verifyAudit();
 
   assert.deepEqual(calls.map(call => call.url), [
@@ -57,6 +58,7 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
     'https://trade.example/api/live/order',
     'https://trade.example/api/live/kill-switch',
     'https://trade.example/api/live/reconcile',
+    'https://trade.example/api/audit?limit=5&event=paper_order_simulated',
     'https://trade.example/api/audit/verify',
   ]);
   const aiCall = calls[3];

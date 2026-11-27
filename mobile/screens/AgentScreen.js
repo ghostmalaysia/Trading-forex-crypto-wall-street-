@@ -16,6 +16,11 @@ export default function AgentScreen({
   liveResult,
   liveEvents: liveEventsProp,
   auditVerify,
+  auditLogs,
+  auditEvent,
+  setAuditEvent,
+  auditLimit,
+  setAuditLimit,
   adminToken,
   setAdminToken,
   liveApproveConfirm,
@@ -37,11 +42,13 @@ export default function AgentScreen({
   onDisarmLive,
   onReconcileLive,
   onVerifyAudit,
+  onLoadAuditLogs,
 }) {
   const rules = Array.isArray(monitor?.rules) ? monitor.rules : [];
   const events = Array.isArray(monitor?.events) ? monitor.events : [];
   const orders = Array.isArray(paperOrders) ? paperOrders : [];
   const liveEvents = Array.isArray(liveEventsProp) ? liveEventsProp : [];
+  const auditEntries = Array.isArray(auditLogs?.entries) ? auditLogs.entries : [];
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -182,6 +189,38 @@ export default function AgentScreen({
         )) : null}
         <Text style={styles.note}>Live orders require server credentials, a wired adapter, admin token, approval secret, explicit approval, and a disarmed kill switch.</Text>
       </Card>
+
+      <Card>
+        <SectionTitle>AUDIT TRAIL</SectionTitle>
+        <TextInput
+          value={auditEvent}
+          onChangeText={setAuditEvent}
+          style={styles.input}
+          placeholder="Event filter (optional)"
+          placeholderTextColor="#64748b"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          value={auditLimit}
+          onChangeText={setAuditLimit}
+          style={styles.input}
+          placeholder="Limit 1-200"
+          placeholderTextColor="#64748b"
+          keyboardType="numeric"
+        />
+        <View style={styles.actions}>
+          <Button title="LOAD AUDIT LOG" color="#22d3ee" disabled={busy} onPress={onLoadAuditLogs} />
+          <Button title="VERIFY CHAIN" color="#64748b" disabled={busy} onPress={onVerifyAudit} />
+        </View>
+        <Text style={styles.note}>Showing {auditEntries.length} of {auditLogs?.count || 0} entries{auditLogs?.event ? ` · ${auditLogs.event}` : ''}</Text>
+        {auditEntries.length ? auditEntries.map((item, index) => (
+          <View key={`${item.hash || index}`} style={[styles.event, styles.auditEntry]}>
+            <Text style={styles.eventTitle}>#{item.seq} {item.event || 'audit'}</Text>
+            <Text style={styles.eventText}>{item.timestamp || ''} · {String(item.hash || '').slice(0, 16)}</Text>
+          </View>
+        )) : null}
+      </Card>
     </ScrollView>
   );
 }
@@ -193,6 +232,7 @@ const styles = StyleSheet.create({
   input: { color: '#e2e8f0', backgroundColor: '#020617', borderColor: '#1e293b', borderWidth: 1, borderRadius: 8, padding: 10, marginVertical: 10 },
   event: { borderColor: '#1e293b', borderLeftColor: '#f59e0b', borderLeftWidth: 3, borderWidth: 1, borderRadius: 8, padding: 10, marginTop: 8 },
   anomaly: { borderLeftColor: '#f87171' },
+  auditEntry: { borderLeftColor: '#22d3ee' },
   order: { borderColor: '#1e293b', borderLeftColor: '#64748b', borderLeftWidth: 3, borderWidth: 1, borderRadius: 8, padding: 10, marginTop: 8 },
   simulated: { borderLeftColor: '#a3e635' },
   eventTitle: { color: '#22d3ee', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 5 },

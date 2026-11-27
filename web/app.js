@@ -32,7 +32,7 @@ const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
   monitor: null, broker: null, backtest: null, paperOrders: [],
-  liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null,
+  liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null, auditLogs: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
 };
@@ -841,6 +841,14 @@ function renderAgent() {
   $('auditVerify').textContent = state.auditVerify
     ? `Audit chain ${state.auditVerify.ok ? 'valid' : 'INVALID'} · ${state.auditVerify.count || 0} entries${state.auditVerify.error ? ` · ${state.auditVerify.error}` : ''}`
     : '';
+  const auditLogs = state.auditLogs;
+  const entries = Array.isArray(auditLogs?.entries) ? auditLogs.entries : [];
+  $('auditLogCount').textContent = `Showing ${entries.length} of ${auditLogs?.count ?? 0} audit entries${auditLogs?.event ? ` · ${auditLogs.event}` : ''}`;
+  $('auditLogList').innerHTML = entries.length ? entries.map(entry => `
+    <div class="agent-event audit-entry">
+      <strong>#${escapeHtml(String(entry.seq ?? ''))} ${escapeHtml(String(entry.event || ''))}</strong><br />
+      ${escapeHtml(String(entry.timestamp || ''))} · ${escapeHtml(String(entry.hash || '').slice(0, 16))}
+    </div>`).join('') : '';
 }
 
 async function loadPaperOrders() {
@@ -876,7 +884,7 @@ async function loadAgentState() {
     state.broker = broker;
     state.liveStatus = live;
     renderAgent();
-    await Promise.all([loadPaperOrders(), loadLiveEvents()]);
+    await Promise.all([loadPaperOrders(), loadLiveEvents(), loadAuditLogs()]);
   } catch {
     $('monitorStatus').textContent = 'Agent APIs unavailable.';
   }
@@ -1070,6 +1078,21 @@ async function verifyAudit() {
     renderAgent();
   } catch (error) {
     $('auditVerify').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
+  } finally { btn.disabled = false; }
+}
+
+async function loadAuditLogs() {
+  const btn = $('loadAuditBtn');
+  btn.disabled = true;
+  try {
+    const params = new URLSearchParams();
+    params.set('limit', String(Math.min(Math.max(Number($('auditLimit').value) || 50, 1), 200)));
+    const event = $('auditEvent').value.trim();
+    if (event) params.set('event', event);
+    state.auditLogs = await agentRequest(`/api/audit?${params.toString()}`);
+    renderAgent();
+  } catch (error) {
+    $('auditLogCount').innerHTML = `<div class="down">${escapeHtml(error.message)}</div>`;
   } finally { btn.disabled = false; }
 }
 
@@ -1365,6 +1388,7 @@ function bind() {
   $('disarmLiveBtn').addEventListener('click', () => setLiveKillSwitch(false));
   $('reconcileLiveBtn').addEventListener('click', reconcileLive);
   $('verifyAuditBtn').addEventListener('click', verifyAudit);
+  $('loadAuditBtn').addEventListener('click', loadAuditLogs);
   $('configEditBtn').addEventListener('click', openConfig);
   $('configForm').addEventListener('submit', event => { event.preventDefault(); applyConfigFromForm(false); });
   $('configTestBtn').addEventListener('click', () => applyConfigFromForm(true));

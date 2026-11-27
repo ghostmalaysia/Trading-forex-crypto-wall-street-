@@ -243,6 +243,18 @@
               <div id="liveEvents" class="agent-events"></div>
             </section>
           </div>
+          <section class="agent-block audit-block">
+            <h4>Audit trail</h4>
+            <div class="audit-controls">
+              <label for="auditEvent">Event</label>
+              <input id="auditEvent" type="text" placeholder="All events" autocomplete="off" />
+              <label for="auditLimit">Limit</label>
+              <input id="auditLimit" type="number" min="1" max="200" value="50" />
+              <button id="loadAuditBtn" type="button">Load</button>
+            </div>
+            <div id="auditLogCount" class="agent-status">Loading audit trail…</div>
+            <div id="auditLogList" class="agent-events audit-list"></div>
+          </section>
           <p class="disclaimer">Live orders require server credentials, a wired adapter, admin token, approval secret, explicit human approval, and a disarmed kill switch. The default adapter blocks every live order.</p>
         </article>
       </section>

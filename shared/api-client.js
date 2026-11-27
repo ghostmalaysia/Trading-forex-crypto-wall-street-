@@ -69,6 +69,13 @@ export function createApiClient({ baseUrl, fetchImpl = fetch } = {}) {
       headers,
       body: JSON.stringify(input),
     }),
+    auditLogs: (options = {}) => {
+      const params = new URLSearchParams();
+      if (options.limit != null) params.set('limit', String(options.limit));
+      if (options.event) params.set('event', String(options.event));
+      const query = params.toString();
+      return request(`/api/audit${query ? `?${query}` : ''}`);
+    },
     verifyAudit: () => request('/api/audit/verify'),
     askAi: (message, mode, context) => request('/api/ai', {
       method: 'POST',

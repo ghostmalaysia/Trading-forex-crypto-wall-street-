@@ -9,7 +9,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `mobile/` - Expo app scaffold consuming the same Node APIs
 - `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs, live events)
 - `ai/` - AI prompt/provider/plan modules plus safe agent and guarded-live modules (monitor, backtest, execution, broker, audit chain, token vault, risk gate, approvals, circuit breaker, reconciliation)
-- `tests/` - automated AI, HTTP, agent, live guard, shared client, and mobile cloud client tests
+- `cli/` - agent-native JSON CLI for read-only inspection and guarded write workflows
+- `tests/` - automated AI, HTTP, agent, live guard, CLI, shared client, and mobile cloud client tests
 - `shared/` - API client and curated feed data shared by server and mobile
 - `docs/` - product notes, references, and integration plan
 - `Dockerfile` / `docker-compose.yml` - container deployment config
@@ -29,6 +30,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Append-only audit logs for AI requests, plan decisions, feedback, and alerts
 - Agent Lab: background monitor rules/anomaly events, educational SMA-cross backtest, paper order simulation, evaluation feedback, and broker status
 - Guarded-live controls: server-side token vault, deterministic risk gate, HMAC approval, kill switch, circuit breaker, reconciliation, and hash-chained audit verification
+- Audit trail viewer with event filters plus CLI commands for machine-readable inspection and guarded workflows
 - Server-side monitor interval with audit events for monitor, backtest, paper order, evaluation, and guarded-live actions
 - Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
@@ -48,6 +50,30 @@ node server.mjs
 ```
 
 Opening `web/index.html` directly still works for the static UI, but AI requests require `server.mjs`.
+
+## Agent-native CLI
+
+The CLI emits JSON by default and never prints tokens. Read-only commands need no confirmation:
+
+```bash
+npm run cli -- help
+npm run cli -- market --pretty
+npm run cli -- audit logs --limit 20 --event live_order_result
+npm run cli -- audit verify
+npm run cli -- live status
+```
+
+Write commands require exact confirmations; guarded-live commands also need `--admin-token` or `TRADEWALL_LIVE_ADMIN_TOKEN`:
+
+```bash
+npm run cli -- paper order --plan-file plan.json --risk-file risk.json --context-file context.json --confirm "EXECUTE PAPER"
+npm run cli -- live proposal --plan-file plan.json --risk-file risk.json --context-file context.json --account-file account.json
+npm run cli -- live approve --proposal-id live-123 --confirm "APPROVE LIVE"
+npm run cli -- live order --approval-file approval.json --confirm "EXECUTE LIVE"
+npm run cli -- live kill-switch --enabled false --confirm "DISABLE KILL SWITCH"
+```
+
+Set `TRADEWALL_API_BASE_URL` (or `--base`) to target a different server. The default adapter still blocks live orders unless the server is configured with a real adapter.
 
 > **Data status:** prices, news, and fallback AI replies are simulated unless you connect a provider. The refresh button advances the mock feed. Supabase stores chat, preferences, learning, and plan decisions only after sign-in.
 
@@ -94,7 +120,7 @@ The flow is `POST /api/live/proposal` -> `POST /api/live/approve` -> `POST /api/
 npm test
 ```
 
-Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, guarded-live risk/approval/circuit/reconciliation, health/market/news/agent/AI/live endpoints, static serving, path traversal rejection, shared API client, and hash-chained audit logs. The HTTP test starts a local stub market feed, so it does not require internet access.
+Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, guarded-live risk/approval/circuit/reconciliation, health/market/news/agent/AI/live/audit endpoints, CLI parsing and guard rails, static serving, path traversal rejection, shared API client, and hash-chained audit logs. The HTTP test starts a local stub market feed, so it does not require internet access.
 
 ## Deployment
 
@@ -108,7 +134,7 @@ The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume fo
 
 ## Mobile app
 
-`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, `/api/broker/status`, and the guarded-live/audit endpoints. Supabase Auth, preferences, watchlist, chat, paper orders, evaluations, and live event metadata sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
+`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, `/api/broker/status`, and the guarded-live/audit endpoints. The Agent Lab now includes an audit trail viewer with event filters and chain verification. Supabase Auth, preferences, watchlist, chat, paper orders, evaluations, and live event metadata sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
 
 ```bash
 cd mobile
@@ -159,4 +185,4 @@ Build a platform/dashboard for web and Android/iOS that includes:
 - Any live adapter must be permissioned and confirm-before-execute; secrets stay server-side.
 
 ## Next Steps
-See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–5 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, the mobile app, and guarded live scaffolding; a real broker adapter, licensed spot feeds, and remote push tokens remain integration work.
+See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–6 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, the mobile app, guarded live scaffolding, and the agent-native operator layer; a real broker adapter, licensed spot feeds, production auth, and remote push tokens remain integration work.

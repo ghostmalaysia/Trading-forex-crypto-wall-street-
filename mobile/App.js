@@ -57,6 +57,9 @@ export default function App() {
   const [liveResult, setLiveResult] = useState(null);
   const [liveEvents, setLiveEvents] = useState([]);
   const [auditVerify, setAuditVerify] = useState(null);
+  const [auditLogs, setAuditLogs] = useState(null);
+  const [auditEvent, setAuditEvent] = useState('');
+  const [auditLimit, setAuditLimit] = useState('50');
   const [liveAdminToken, setLiveAdminToken] = useState('');
   const [liveApproveConfirm, setLiveApproveConfirm] = useState('');
   const [liveExecuteConfirm, setLiveExecuteConfirm] = useState('');
@@ -111,13 +114,14 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker, nextLiveStatus] = await Promise.all([
+      const [nextHealth, nextMarket, nextFeed, nextMonitor, nextBroker, nextLiveStatus, nextAuditLogs] = await Promise.all([
         apiClient.health(),
         apiClient.market(),
         apiClient.news(),
         apiClient.monitor(),
         apiClient.brokerStatus(),
         apiClient.liveStatus(),
+        apiClient.auditLogs({ limit: Number(auditLimit) || 50, event: auditEvent.trim() || null }),
       ]);
       setHealth(nextHealth);
       setMarket(nextMarket);
@@ -125,13 +129,14 @@ export default function App() {
       setAgentMonitor(nextMonitor);
       setBroker(nextBroker);
       setLiveStatus(nextLiveStatus);
+      setAuditLogs(nextAuditLogs);
       await checkAlerts(nextMarket);
     } catch (requestError) {
       setError(requestError.message || 'Cannot reach the server');
     } finally {
       setBusy(false);
     }
-  }, [apiClient, checkAlerts]);
+  }, [apiClient, auditEvent, auditLimit, checkAlerts]);
 
   useEffect(() => {
     let active = true;
@@ -335,6 +340,13 @@ export default function App() {
     setAuditVerify(await apiClient.verifyAudit());
   }), [apiClient, run]);
 
+  const handleLoadAuditLogs = useCallback(() => run(async () => {
+    setAuditLogs(await apiClient.auditLogs({
+      limit: Number(auditLimit) || 50,
+      event: auditEvent.trim() || null,
+    }));
+  }), [apiClient, auditEvent, auditLimit, run]);
+
   const handleSelectSymbol = useCallback((symbol) => {
     setSelected(symbol);
     if (cloudState.signedIn) cloud.saveSettings({ theme: 'dark', default_symbol: symbol }).catch(() => {});
@@ -387,6 +399,7 @@ export default function App() {
     setLiveProposal(null);
     setLiveApproval(null);
     setLiveResult(null);
+    setAuditLogs(null);
     setLiveAdminToken('');
     setLiveApproveConfirm('');
     setLiveExecuteConfirm('');
@@ -475,6 +488,11 @@ export default function App() {
         liveResult={liveResult}
         liveEvents={liveEvents}
         auditVerify={auditVerify}
+        auditLogs={auditLogs}
+        auditEvent={auditEvent}
+        setAuditEvent={setAuditEvent}
+        auditLimit={auditLimit}
+        setAuditLimit={setAuditLimit}
         adminToken={liveAdminToken}
         setAdminToken={setLiveAdminToken}
         liveApproveConfirm={liveApproveConfirm}
@@ -496,6 +514,7 @@ export default function App() {
         onDisarmLive={handleDisarmLive}
         onReconcileLive={handleReconcileLive}
         onVerifyAudit={handleVerifyAudit}
+        onLoadAuditLogs={handleLoadAuditLogs}
       />
     );
   } else {

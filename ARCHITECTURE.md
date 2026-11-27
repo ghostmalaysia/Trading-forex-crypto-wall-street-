@@ -58,9 +58,9 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
   - Retrieval layer (embeddings/pgvector later; simple DB first)
 
 ### Agent-Native Interface (CLI-Anything reference)
-- **Pattern**: expose core workflows as a stateful CLI with `--json` output and `SKILL.md` for agent discovery (inspired by [CLI-Anything](https://github.com/HKUDS/CLI-Anything)).
-- **Target commands**: market quote/watchlist/news/ai-summary/memory sync; all outputs machine-readable.
-- **Safety**: CLI commands are read/analyze by default; any execution action requires explicit confirmation and audit log.
+- **Pattern**: `cli/tradewall.mjs` exposes core workflows as a JSON CLI using the shared API client (inspired by [CLI-Anything](https://github.com/HKUDS/CLI-Anything)).
+- **Commands**: `help`, `health`, `market`, `watchlist`, `news`, `monitor`, `monitor rules`, `monitor run`, `broker`, `audit logs`, `audit verify`, `ai`, `paper order`, `paper evaluate`, and guarded `live` commands.
+- **Safety**: read/analyze commands need no confirmation; paper/live writes require exact confirmation strings, guarded-live writes require an admin token, and secrets are never included in output.
 
 ### Trading Execution Layer (MT5/MetaApi, phased)
 - **Observe mode (default)**: read-only market data, AI analysis, alerts.
@@ -81,7 +81,8 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 | AI Assistant | Chat, summaries, monitoring | Rule-based fallback + Groq provider |
 | Agent Workflows | Monitor rules, anomaly detection, backtests, paper execution | Safe paper-only modules and audit events |
 | Guarded Live | Token vault, deterministic risk gate, approvals, breaker, reconciliation | Fail-closed scaffold; default adapter blocks live orders |
-| Mobile Shell | Shared navigation and screens | Expo app with dashboard, news, AI, guarded-live, and agent screens |
+| Operator CLI | JSON commands for inspection and guarded workflows | `cli/tradewall.mjs` with confirmation gates and no secrets in output |
+| Mobile Shell | Shared navigation and screens | Expo app with dashboard, news, AI, guarded-live, audit, and agent screens |
 
 ## Data Flow
 1. **Ingestion** pulls market/news data from free providers.
@@ -92,6 +93,7 @@ A free-first trading intelligence platform for Forex, Crypto, and Wall Street ma
 6. **Feedback loop** records user actions and AI outcome ratings.
 7. **Agent workflows** evaluate monitor rules/anomalies on a server interval, run educational backtests, simulate fills with explicit confirmation, and audit every action.
 8. **Guarded live** promotes an approved proposal through a fresh risk check, HMAC approval, kill switch/circuit breaker, named execution adapter, reconciliation, and hash-chained audit verification.
+9. **Operator CLI and audit viewers** call the same APIs with JSON output, confirmation gates, event filters, and chain verification for agents and humans.
 
 ## Security & Compliance Notes
 - No secrets in repo; use `.env.local`.
