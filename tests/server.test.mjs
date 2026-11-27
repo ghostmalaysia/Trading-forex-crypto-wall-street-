@@ -157,6 +157,23 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(sharedModule.status, 200);
     assert.match(sharedModule.headers.get('content-type'), /javascript/);
 
+    const marketPage = await (await fetch(`${base}/`)).text();
+    assert.match(marketPage, /Market Terminal/);
+    assert.match(marketPage, /id="aiScoutOrb"/);
+    assert.match(marketPage, /class="scout-eye scout-eye-left"/);
+
+    const aiPage = await (await fetch(`${base}/ai.html`)).text();
+    assert.match(aiPage, /AI Platform/);
+    assert.match(aiPage, /id="priceChart"/);
+    assert.match(aiPage, /id="chatForm"/);
+    assert.match(aiPage, /id="pnlChart"/);
+    assert.match(aiPage, /id="executeLiveBtn"/);
+
+    const tradePage = await (await fetch(`${base}/trade.html`)).text();
+    assert.match(tradePage, /Trade Operations/);
+    assert.match(tradePage, /id="monitorStatus"/);
+    assert.match(tradePage, /id="auditLogList"/);
+
     const broker = await (await fetch(`${base}/api/broker/status`)).json();
     assert.equal(broker.liveOrdersEnabled, false);
     assert.equal(broker.capabilities.paperOrders, true);

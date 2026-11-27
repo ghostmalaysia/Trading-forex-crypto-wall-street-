@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MIM VENTURES — Trading Intelligence Dashboard</title>
+  <title>MIM VENTURES — Market Terminal</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body data-page="market">
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
@@ -17,14 +17,9 @@
         </div>
       </div>
       <nav class="nav" aria-label="Main navigation">
-        <a class="active" href="#dashboard"><span class="nav-index">01</span>Dashboard</a>
-        <a href="#watchlist"><span class="nav-index">02</span>Watchlist</a>
-        <a href="#news"><span class="nav-index">03</span>News</a>
-        <a href="#ai"><span class="nav-index">04</span>AI Assistant</a>
-        <a href="#alerts"><span class="nav-index">05</span>Alerts</a>
-        <a href="#calendar"><span class="nav-index">06</span>Calendar</a>
-        <a href="#agent"><span class="nav-index">07</span>Agent Lab</a>
-        <a href="#screener"><span class="nav-index">08</span>Screener</a>
+        <a class="active" href="./index.html"><span class="nav-index">01</span>Market</a>
+        <a href="./trade.html"><span class="nav-index">02</span>Trade Ops</a>
+        <a href="./ai.html"><span class="nav-index">03</span>AI Platform</a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -75,7 +70,7 @@
             <h2>Market Terminal</h2>
             <p id="clock" aria-live="off">--</p>
           </div>
-          <span id="sessionBadge" class="session-badge">--</span>
+          <span id="sessionBadge" class="session-badge">MARKET</span>
         </div>
         <div class="topbar-actions">
           <select id="symbolSelect" aria-label="Symbol"></select>
@@ -84,17 +79,16 @@
             <option value="4H">4H</option>
             <option value="1D" selected>1D</option>
           </select>
-          <button id="planBtn" type="button">AI Trade Plan</button>
           <button id="refreshBtn" class="primary" type="button">Refresh</button>
+          <a class="badge live nav-cta" href="./ai.html">AI Platform →</a>
         </div>
       </header>
 
       <div id="ticker" class="ticker" aria-label="Market ticker"></div>
-
       <section class="stats" id="stats"></section>
 
       <section class="grid">
-        <article class="panel chart-panel">
+        <article class="panel chart-panel" id="chart">
           <div class="panel-head">
             <h3 id="chartTitle">Chart</h3>
             <div class="panel-actions">
@@ -140,166 +134,12 @@
           </div>
         </article>
 
-        <article class="panel" id="screener">
-          <div class="panel-head">
-            <h3>Focus Screener</h3>
-            <span class="badge" id="screenerProvider">--</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Bias</th></tr></thead>
-              <tbody id="screenerBody"></tbody>
-            </table>
-          </div>
-          <p class="disclaimer">Rule-based screen from the same server snapshot. Informational only.</p>
-        </article>
-
         <article class="panel" id="news">
           <div class="panel-head">
             <h3>Market News</h3>
             <span class="muted" id="newsProvider">Sample headlines (mock)</span>
           </div>
           <div id="newsList" class="news-list"></div>
-        </article>
-
-        <article class="panel ai-panel" id="ai">
-          <div class="panel-head">
-            <h3>AI Assistant</h3>
-            <span class="badge warn">XAU/USD • DXY only</span>
-            <span class="badge" id="paperCapital">Paper $100 • risk 1% • daily 3%</span>
-          </div>
-          <div id="paperLearning" class="plan-body"><p class="muted">Pembelajaran paper belum tersedia.</p></div>
-          <div id="marketSummary" class="plan-body"><p class="muted">Tiada ringkasan lagi.</p></div>
-          <button id="summaryBtn" type="button">Generate Market Summary</button>
-          <button id="researchBtn" type="button">Analisis Mendalam (AI)</button>
-          <div id="researchBody" class="plan-body"><p class="muted">Tekan “Analisis Mendalam” untuk laporan terperinci dengan bukti, senario, pembelajaran, dan had modal.</p></div>
-          <button id="candleBtn" type="button">Terangkan Candle / Corak</button>
-          <div id="candleBody" class="plan-body"><p class="muted">Tekan “Terangkan Candle” untuk maksud badan, sumbu, dan corak candle semasa.</p></div>
-          <div class="panel-head decision-head">
-            <h4>AI Trading Room</h4>
-            <span class="badge" id="decisionBadge">Kenapa buy / sell?</span>
-          </div>
-          <div id="decisionLog" class="chat-log decision-log"></div>
-          <form id="decisionForm" class="chat-form">
-            <input id="decisionInput" type="text" placeholder="Tanya: kenapa AI cadang buy/sell?" autocomplete="off" />
-            <button type="submit">Ask</button>
-          </form>
-          <div id="chatLog" class="chat-log"></div>
-          <form id="chatForm" class="chat-form">
-            <input id="chatInput" type="text" placeholder="Tanya AI: analisis emas/DXY, risiko, atau cadangan..." autocomplete="off" />
-            <button type="submit">Send</button>
-          </form>
-          <p class="disclaimer">AI output is not financial advice. Verify before acting.</p>
-        </article>
-
-        <article class="panel plan-panel" id="plan">
-          <div class="panel-head">
-            <h3>AI Trade Plan</h3>
-            <span class="badge" id="planStatus">Paper only</span>
-          </div>
-          <div id="planBody" class="plan-body"><p class="muted">Tiada cadangan lagi. Pilih XAU/USD atau DXY, tekan “AI Trade Plan”.</p></div>
-          <div id="planActions" class="plan-actions" hidden>
-            <button id="approvePlanBtn" type="button">Approve (paper)</button>
-            <button id="rejectPlanBtn" type="button">Reject</button>
-          </div>
-        </article>
-
-        <article class="panel alerts-panel" id="alerts">
-          <div class="panel-head">
-            <h3>Price Alerts</h3>
-            <span class="badge warn" id="alertCount">0 active</span>
-          </div>
-          <form id="alertForm" class="alert-form">
-            <select id="alertSymbol" aria-label="Alert symbol">
-              <option value="XAU/USD">XAU/USD</option>
-              <option value="DXY">DXY</option>
-            </select>
-            <select id="alertCondition" aria-label="Alert condition">
-              <option value=">=">≥</option>
-              <option value="<=">≤</option>
-            </select>
-            <input id="alertThreshold" type="number" step="any" min="0" placeholder="Price" required aria-label="Alert price" />
-            <button type="submit">Add</button>
-          </form>
-          <div id="alertList" class="alert-list"></div>
-          <div id="alertToast" class="alert-toast" aria-live="polite" hidden></div>
-          <p class="disclaimer">Alerts notify in this browser. No orders are placed.</p>
-        </article>
-
-        <article class="panel calendar-panel" id="calendar">
-          <div class="panel-head">
-            <h3>Economic Calendar</h3>
-            <span class="badge warn">Curated mock</span>
-          </div>
-          <div id="calendarList" class="calendar-list"></div>
-          <p class="disclaimer">Times are UTC. Events are illustrative until a calendar data provider is connected.</p>
-        </article>
-
-        <article class="panel agent-panel" id="agent">
-          <div class="panel-head">
-            <h3>Agent Lab</h3>
-            <span class="badge warn" id="brokerMode">PAPER</span>
-          </div>
-          <div class="agent-grid">
-            <section class="agent-block">
-              <h4>Monitor</h4>
-              <div id="monitorStatus" class="agent-status">Loading…</div>
-              <div id="monitorEvents" class="agent-events"></div>
-              <button id="runMonitorBtn" type="button">Run monitor cycle</button>
-            </section>
-            <section class="agent-block">
-              <h4>Educational backtest</h4>
-              <button id="backtestBtn" type="button">Run SMA cross</button>
-              <div id="backtestResult" class="agent-result">Uses the selected chart series.</div>
-            </section>
-            <section class="agent-block">
-              <h4>Paper execution</h4>
-              <input id="paperConfirm" type="text" placeholder="Type EXECUTE PAPER" autocomplete="off" aria-label="Paper execution confirmation" />
-              <button id="executePaperBtn" type="button">Simulate order</button>
-              <div id="paperOrders" class="paper-orders"></div>
-            </section>
-          </div>
-          <div class="live-grid">
-            <section class="agent-block live-block">
-              <h4>Guarded live</h4>
-              <div id="liveStatus" class="agent-status">Loading live guard…</div>
-              <label for="liveAdminToken">Live admin token</label>
-              <input id="liveAdminToken" type="password" autocomplete="off" placeholder="Server admin token" />
-              <div class="live-actions">
-                <button id="stageLiveBtn" type="button">Stage proposal</button>
-                <button id="killLiveBtn" type="button">Kill live</button>
-                <button id="reconcileLiveBtn" type="button">Reconcile</button>
-                <button id="verifyAuditBtn" type="button">Verify audit</button>
-              </div>
-              <div id="auditVerify" class="agent-result"></div>
-            </section>
-            <section class="agent-block live-block">
-              <h4>Human approval</h4>
-              <div id="liveProposal" class="agent-result">Generate and approve a plan first.</div>
-              <input id="liveApproveConfirm" type="text" placeholder="Type APPROVE LIVE" autocomplete="off" />
-              <button id="approveLiveBtn" type="button">Approve staged proposal</button>
-              <div id="liveApproval" class="agent-result"></div>
-              <input id="liveExecuteConfirm" type="text" placeholder="Type EXECUTE LIVE" autocomplete="off" />
-              <button id="executeLiveBtn" type="button">Send guarded order</button>
-              <input id="liveDisarmConfirm" type="text" placeholder="Type DISABLE KILL SWITCH" autocomplete="off" />
-              <button id="disarmLiveBtn" type="button">Disarm kill switch</button>
-              <div id="liveResult" class="agent-result"></div>
-              <div id="liveEvents" class="agent-events"></div>
-            </section>
-          </div>
-          <section class="agent-block audit-block">
-            <h4>Audit trail</h4>
-            <div class="audit-controls">
-              <label for="auditEvent">Event</label>
-              <input id="auditEvent" type="text" placeholder="All events" autocomplete="off" />
-              <label for="auditLimit">Limit</label>
-              <input id="auditLimit" type="number" min="1" max="200" value="50" />
-              <button id="loadAuditBtn" type="button">Load</button>
-            </div>
-            <div id="auditLogCount" class="agent-status">Loading audit trail…</div>
-            <div id="auditLogList" class="agent-events audit-list"></div>
-          </section>
-          <p class="disclaimer">Live orders require server credentials, a wired adapter, admin token, approval secret, explicit human approval, and a disarmed kill switch. The default adapter blocks every live order.</p>
         </article>
       </section>
 
@@ -312,14 +152,21 @@
       </footer>
     </main>
   </div>
+
   <div id="aiScout" class="ai-scout" hidden>
-    <button id="aiScoutOrb" class="ai-scout-orb" type="button" aria-label="Buka AI Assistant">AI</button>
+    <button id="aiScoutOrb" class="ai-scout-orb" type="button" aria-label="Buka AI Assistant">
+      <span class="scout-antenna"></span>
+      <span class="scout-eye scout-eye-left"></span>
+      <span class="scout-eye scout-eye-right"></span>
+      <span class="scout-mouth"></span>
+    </button>
     <div id="aiScoutBubble" class="ai-scout-bubble" hidden>
       <button id="aiScoutClose" class="ai-scout-close" type="button" aria-label="Tutup mesej AI">×</button>
       <strong id="aiScoutTitle">AI SCOUT</strong>
       <p id="aiScoutText"></p>
     </div>
   </div>
+
   <script src="./supabase-config.js"></script>
   <script src="./supabase-client.js"></script>
   <script type="module" src="./app.js"></script>

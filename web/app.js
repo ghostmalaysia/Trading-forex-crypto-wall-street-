@@ -41,7 +41,11 @@ const state = {
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
   chartTemplates: {}, serverSession: { configured: false, authenticated: false },
 };
-const $ = (id) => document.getElementById(id);
+const inertNode = document.createElement('div');
+inertNode.hidden = true;
+const $ = (id) => document.getElementById(id) || inertNode;
+const page = document.body.dataset.page || 'market';
+const equityCurveKey = 'tradewall_equity_curve';
 
 function seed(base, vol) {
   let v = base;
@@ -424,6 +428,7 @@ function drawChart() {
   const hi = rawHigh + span * 0.08;
 
   const canvas = $('priceChart');
+  if (typeof canvas.getContext !== 'function') return;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || 600;
@@ -786,9 +791,118 @@ async function askAI(message, mode = 'chat', extra = {}) {
   return data;
 }
 
+function loadEquityCurve() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(equityCurveKey) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(point => Number.isFinite(Number(point?.value)))
+      .slice(-60)
+      .map(point => ({ t: Number(point.t) || Date.now(), value: Number(point.value) }));
+  } catch { return []; }
+}
+
+function recordEquityPoint(account) {
+  const points = loadEquityCurve();
+  const equity = Number(account?.equity);
+  if (!Number.isFinite(equity)) return points;
+  const last = points[points.length - 1];
+  if (!last || Math.abs(Number(last.value) - equity) > 0.001 || Date.now() - Number(last.t) > 60000) {
+    points.push({ t: Date.now(), value: equity });
+  }
+  const trimmed = points.slice(-60);
+  try { localStorage.setItem(equityCurveKey, JSON.stringify(trimmed)); } catch {}
+  return trimmed;
+}
+
+function drawPnl(points = loadEquityCurve()) {
+  const canvas = $('pnlChart');
+  if (canvas === inertNode || typeof canvas.getContext !== 'function') return;
+  const ctx = canvas.getContext('2d');
+  const series = points.length > 1 ? points : points.length ? [{ t: points[0].t - 1, value: points[0].value }, points[0]] : [];
+  const cssW = canvas.clientWidth || 480;
+  const cssH = 160;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (!series.length) {
+    ctx.fillStyle = '#7589a5';
+    ctx.font = '11px monospace';
+    ctx.fillText('Tiada data equity paper lagi.', 14, cssH / 2);
+    return;
+  }
+  const values = series.map(point => Number(point.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || Math.max(Math.abs(max) * 0.01, 1);
+  const lo = min - span * 0.25;
+  const hi = max + span * 0.25;
+  const pad = { l: 46, r: 12, t: 14, b: 22 };
+  const x = index => pad.l + (index / (series.length - 1)) * (cssW - pad.l - pad.r);
+  const y = value => pad.t + (1 - (value - lo) / (hi - lo)) * (cssH - pad.t - pad.b);
+  ctx.strokeStyle = '#162237';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  for (let i = 0; i < 4; i++) {
+    const gy = pad.t + (i / 3) * (cssH - pad.t - pad.b);
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(cssW - pad.r, gy); ctx.stroke();
+    ctx.fillStyle = '#4a5f7d'; ctx.font = '9px monospace';
+    ctx.fillText((hi - (i / 3) * (hi - lo)).toFixed(2), 6, gy + 3);
+  }
+  const rising = values[values.length - 1] >= values[0];
+  const color = rising ? '#00d68f' : '#ff4d5e';
+  ctx.beginPath();
+  series.forEach((point, index) => index ? ctx.lineTo(x(index), y(Number(point.value))) : ctx.moveTo(x(index), y(Number(point.value))));
+  ctx.lineTo(x(series.length - 1), cssH - pad.b);
+  ctx.lineTo(x(0), cssH - pad.b);
+  ctx.closePath();
+  const gradient = ctx.createLinearGradient(0, pad.t, 0, cssH - pad.b);
+  gradient.addColorStop(0, rising ? 'rgba(0,214,143,.24)' : 'rgba(255,77,94,.24)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.beginPath();
+  series.forEach((point, index) => index ? ctx.lineTo(x(index), y(Number(point.value))) : ctx.moveTo(x(index), y(Number(point.value))));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x(series.length - 1), y(values[values.length - 1]), 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#4a5f7d';
+  ctx.font = '9px monospace';
+  ctx.fillText('MULA', pad.l, cssH - 6);
+  ctx.fillText('SEKARANG', cssW - pad.r - 46, cssH - 6);
+}
+
+function renderPnlStats(account, points) {
+  const stats = $('pnlStats');
+  if (stats === inertNode) return;
+  const baseline = Number(points[0]?.value ?? account?.startingCapital ?? 100);
+  const equity = Number(account?.equity ?? points[points.length - 1]?.value ?? baseline);
+  const total = equity - baseline;
+  const pct = baseline ? (total / baseline) * 100 : 0;
+  const cls = total >= 0 ? 'up' : 'down';
+  stats.innerHTML = `
+    <div class="plan-cell"><span>Equity</span><strong>$${equity.toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>P&L keseluruhan</span><strong class="${cls}">${total >= 0 ? '+' : ''}$${total.toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>P&L harian</span><strong class="${Number(account?.dailyPnl) >= 0 ? 'up' : 'down'}">${Number(account?.dailyPnl) >= 0 ? '+' : ''}$${Number(account?.dailyPnl || 0).toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>Realized</span><strong class="${Number(account?.realizedPnl) >= 0 ? 'up' : 'down'}">${Number(account?.realizedPnl) >= 0 ? '+' : ''}$${Number(account?.realizedPnl || 0).toFixed(2)}</strong></div>`;
+  const badge = $('pnlBadge');
+  if (badge !== inertNode) {
+    badge.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    badge.className = `badge ${total >= 0 ? 'live' : 'warn'}`;
+  }
+}
+
 function renderPaperState() {
   const account = state.paperAccount;
   const capital = $('paperCapital');
+  const points = recordEquityPoint(account);
+  drawPnl(points);
+  renderPnlStats(account, points);
   if (capital && account) {
     capital.textContent = `Paper $${Number(account.equity).toFixed(2)} / $${Number(account.startingCapital).toFixed(2)} • risk ${account.maxRiskPct}% • daily ${account.maxDailyLossPct}%`;
     capital.classList.toggle('warn', !!account.blocked);
@@ -877,14 +991,34 @@ async function runDecision(text) {
 }
 
 function renderCandle() {
-  const body = $('candleBody');
-  if (!body || !state.candle) return;
+  if (!state.candle) return;
   const signal = state.candle.signal || {};
+  const action = signal.action || 'NO TRADE';
   const patterns = (state.candle.patterns || []).map(item => `<div class="risk-item"><span>${escapeHtml(item.label)} · ${escapeHtml(item.bias)}</span></div>`).join('');
-  body.innerHTML = `
-    <p class="muted">Isyarat: <strong>${escapeHtml(signal.action || 'NO TRADE')}</strong> · keyakinan ${escapeHtml(signal.confidence || 'low')} · ${escapeHtml(state.candle.summary || '')}</p>
-    <div class="risk-list">${patterns || '<div class="risk-item"><span>Tiada corak klasik yang jelas.</span></div>'}</div>
-    <p>${escapeHtml(state.candle.reply || '')}</p>`;
+  const body = $('candleBody');
+  if (body !== inertNode) {
+    body.innerHTML = `
+      <p class="muted">Isyarat: <strong>${escapeHtml(action)}</strong> · keyakinan ${escapeHtml(signal.confidence || 'low')} · ${escapeHtml(state.candle.summary || '')}</p>
+      <div class="risk-list">${patterns || '<div class="risk-item"><span>Tiada corak klasik yang jelas.</span></div>'}</div>
+      <p>${escapeHtml(state.candle.reply || '')}</p>`;
+  }
+  const badge = $('signalBadge');
+  if (badge !== inertNode) {
+    badge.textContent = action;
+    badge.className = `signal-action ${action.toLowerCase().replace(/\s+/g, '-')}`;
+  }
+  const actionNode = $('signalAction');
+  if (actionNode !== inertNode) actionNode.textContent = action;
+  const confidence = $('signalConfidence');
+  if (confidence !== inertNode) confidence.textContent = String(signal.confidence || 'low').toUpperCase();
+  const evidence = $('signalEvidence');
+  if (evidence !== inertNode) evidence.textContent = signal.label || state.candle.summary || 'Tiada corak jelas.';
+  const reason = $('signalReason');
+  if (reason !== inertNode) reason.textContent = signal.reason || 'Tunggu pengesahan struktur sebelum sebarang tindakan.';
+  const meta = $('signalMeta');
+  if (meta !== inertNode) {
+    meta.textContent = `${state.candle.symbol || state.selected} · ${state.candle.timeframe || state.timeframe} · ${state.candle.lastClose != null ? fmtPrice(Number(state.candle.lastClose)) : '--'} · rules only`;
+  }
 }
 
 function showScoutMessage(message, kind = 'NO TRADE') {
@@ -965,7 +1099,7 @@ function initScout() {
   const orb = $('aiScoutOrb');
   const close = $('aiScoutClose');
   const bubble = $('aiScoutBubble');
-  if (!root || !orb || !bubble) return;
+  if (root === inertNode || orb === inertNode || bubble === inertNode) return;
   root.hidden = false;
   const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const scout = {
@@ -977,8 +1111,8 @@ function initScout() {
     hover: false,
   };
   const bounds = () => {
-    const width = root.offsetWidth || 46;
-    const height = root.offsetHeight || 46;
+    const width = root.offsetWidth || 52;
+    const height = root.offsetHeight || 52;
     const minX = window.innerWidth > 860 ? 250 : 8;
     const maxX = Math.max(minX, window.innerWidth - width - 12);
     const minY = 76;
@@ -999,8 +1133,13 @@ function initScout() {
   }
   render();
   orb.addEventListener('click', () => {
-    document.getElementById('ai')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    $('chatInput')?.focus();
+    if (page !== 'ai') {
+      window.location.assign('./ai.html');
+      return;
+    }
+    document.getElementById('aiChat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const chatInput = $('chatInput');
+    if (chatInput !== inertNode) chatInput.focus();
   });
   close?.addEventListener('click', () => { bubble.hidden = true; });
   root.addEventListener('mouseenter', () => { scout.hover = true; });
@@ -1865,7 +2004,7 @@ function bind() {
     document.querySelectorAll('.nav a').forEach(item => item.classList.toggle('active', item === link));
   }));
   bindChartTools();
-  window.addEventListener('resize', drawChart);
+  window.addEventListener('resize', () => { drawChart(); drawPnl(); });
 }
 
 async function boot() {
