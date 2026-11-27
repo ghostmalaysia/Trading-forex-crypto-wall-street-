@@ -12,7 +12,10 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 ## MVP Features (current)
 - Dark-theme trading dashboard UI
 - Market watchlist (Forex/Crypto/Stocks) with mock live updates
-- TradingView-style canvas chart: candlesticks, volume, MA20/MA50, RSI14, crosshair, zoom/pan, horizontal/trend drawing tools
+- TradingView-style canvas chart: candlesticks, volume, MA20/MA50, Bollinger Bands, RSI14, MACD, crosshair, zoom/pan, horizontal/trend drawing tools
+- Indicative live feed for XAU/USD (GC=F proxy) and DXY (DX-Y.NYB), with mock fallback
+- Price alerts for gold/USD with optional private Supabase persistence
+- Economic calendar panel with curated mock events
 - Market/news feed panel
 - AI assistant focused on **XAU/USD (gold)** and **USD/DXY** only
 - Chart-aware AI: reads the selected chart series, computes SMA/RSI/ATR/trend, and explains its view
@@ -57,6 +60,12 @@ GROQ_API_KEY=your_key GROQ_MODEL=openai/gpt-oss-20b node server.mjs
 ```
 
 Without a key, the server returns a clearly labelled local fallback. The key is never sent to the browser. Plans are normalized, checked by the risk gate, and remain `paperOnly`. Approve/Reject writes an audit row to Supabase when signed in. Apply [`supabase/migrations/202611270001_ai_learning_and_plans.sql`](supabase/migrations/202611270001_ai_learning_and_plans.sql) for existing projects, or use `supabase/schema.sql` for fresh ones.
+
+## Market data, alerts, and calendar
+
+`GET /api/market` fetches indicative quotes and daily closes for **XAU/USD** (Yahoo `GC=F` futures proxy) and **DXY** (`DX-Y.NYB`) through a server-side adapter. It caches results for 60 seconds and falls back to the simulated feed if a provider is unavailable. Override with `MARKET_DATA_BASE_URL`, `MARKET_DATA_INTERVAL`, `MARKET_DATA_RANGE`, and `MARKET_DATA_TTL_SECONDS` if you use a compatible chart endpoint or proxy.
+
+Price alerts are evaluated in the browser against XAU/USD and DXY. They notify locally and never place orders. When signed in, alerts and their triggered state are stored per user in Supabase; apply `supabase/migrations/202611270001_ai_learning_and_plans.sql` (already includes the `alerts` table from the secure-memory migration). The economic calendar is curated mock data until a calendar provider is connected.
 
 ## Optional Longbridge stock quotes
 

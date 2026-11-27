@@ -126,6 +126,18 @@
     });
   }
 
+  async function update(path, body) {
+    return authorizedFetch(`${restUrl}${path}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function remove(path) {
+    return authorizedFetch(`${restUrl}${path}`, { method: 'DELETE' });
+  }
+
   async function testConnection() {
     if (!cfg) throw new Error('Supabase is not configured.');
     const res = await fetch(`${authUrl}/settings`, { headers: { apikey: cfg.anonKey } });
@@ -207,6 +219,31 @@
       const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=symbol,timeframe,proposal,risk,decision,decided_at,created_at&order=created_at.desc&limit=${size}`;
       const data = await authorizedFetch(`${restUrl}/trade_plans${query}`);
       return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
+    async saveAlert(alert) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      return post('/alerts', {
+        user_key: session.user.id,
+        symbol: String(alert?.symbol || ''),
+        condition: String(alert?.condition || '>='),
+        threshold: Number(alert?.threshold),
+        active: alert?.active !== false,
+      }, 'return=representation');
+    },
+    async loadAlerts(limit = 50) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const size = Math.min(Math.max(Number(limit) || 50, 1), 100);
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=id,symbol,condition,threshold,active,triggered_at,created_at&order=created_at.desc&limit=${size}`;
+      const data = await authorizedFetch(`${restUrl}/alerts${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
+    async triggerAlert(id) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      return update(`/alerts?id=eq.${encodeURIComponent(id)}`, { triggered_at: new Date().toISOString(), active: false });
+    },
+    async deleteAlert(id) {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      return remove(`/alerts?id=eq.${encodeURIComponent(id)}`);
     },
   };
 })();

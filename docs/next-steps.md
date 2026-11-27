@@ -7,7 +7,7 @@
 4. Serve the web app. In the **Cloud memory** card, enter:
    - `url`: your project URL
    - `anonKey`: your publishable/anon key (never use `service_role` in the browser)
-5. Use **Test** to verify the connection, then create an account and sign in to enable private chat/watchlist/learning/plan persistence. Settings stay in this browser; **Clear saved settings** removes them. A gitignored `web/supabase-config.js` can provide defaults, but dashboard values override it.
+5. Use **Test** to verify the connection, then create an account and sign in to enable private chat/watchlist/learning/plan/alert persistence. Settings stay in this browser; **Clear saved settings** removes them. A gitignored `web/supabase-config.js` can provide defaults, but dashboard values override it.
 
 ## 2. Run MVP locally
 ```bash
@@ -24,18 +24,22 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 - Approve/Reject records an audit row in `trade_plans`; feedback records a row in `ai_learning`.
 
 ## 4. Current chart tools (done)
-- Candlestick/line switch, synthesized volume bars, MA20/MA50 overlays, RSI14 pane, crosshair with price labels.
+- Candlestick/line switch, synthesized volume bars, MA20/MA50 and Bollinger overlays, RSI14 and MACD panes, crosshair with price labels.
 - Mouse wheel zoom, drag-to-pan, horizontal-line and trend-line drawing tools.
 - Toolbar state resets when symbol/timeframe changes; chart remains dependency-free canvas.
 
-## 5. Recommended next implementation
-- Add symbol-specific alerts, a screener, and a news/economic calendar.
-- Add MACD/Bollinger panes and saved drawing templates.
+## 5. Current market tools (done)
+- `GET /api/market` provides indicative XAU/USD (`GC=F` proxy) and DXY (`DX-Y.NYB`) quotes with 60s caching and mock fallback.
+- Price alerts for the two focus symbols, with local notifications and optional per-user Supabase persistence.
+- Curated mock economic calendar focused on USD/gold catalysts. No orders are placed.
+
+## 6. Recommended next implementation
+- Add a screener, saved drawing templates, and a real calendar provider.
+- Add mobile Expo app and production deployment with automated tests.
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
-- Add `DataProvider` adapters for real gold/USD data (free APIs first).
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
 
-## 6. Safety checklist
+## 7. Safety checklist
 - Keep AI output informational only.
 - No auto-trading; AI plans stay paper-only and require explicit confirmation.
 - Keep API keys in environment variables on the server.

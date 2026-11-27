@@ -21,6 +21,8 @@
         <a href="#watchlist"><span class="nav-index">02</span>Watchlist</a>
         <a href="#news"><span class="nav-index">03</span>News</a>
         <a href="#ai"><span class="nav-index">04</span>AI Assistant</a>
+        <a href="#alerts"><span class="nav-index">05</span>Alerts</a>
+        <a href="#calendar"><span class="nav-index">06</span>Calendar</a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -102,7 +104,9 @@
               <span class="tool-sep"></span>
               <button type="button" data-indicator="ma20" class="active">MA20</button>
               <button type="button" data-indicator="ma50" class="active">MA50</button>
+              <button type="button" data-indicator="bb">BB</button>
               <button type="button" data-indicator="rsi">RSI</button>
+              <button type="button" data-indicator="macd">MACD</button>
             </div>
           </div>
           <canvas id="priceChart" height="320"></canvas>
@@ -153,6 +157,37 @@
             <button id="approvePlanBtn" type="button">Approve (paper)</button>
             <button id="rejectPlanBtn" type="button">Reject</button>
           </div>
+        </article>
+
+        <article class="panel alerts-panel" id="alerts">
+          <div class="panel-head">
+            <h3>Price Alerts</h3>
+            <span class="badge warn" id="alertCount">0 active</span>
+          </div>
+          <form id="alertForm" class="alert-form">
+            <select id="alertSymbol" aria-label="Alert symbol">
+              <option value="XAU/USD">XAU/USD</option>
+              <option value="DXY">DXY</option>
+            </select>
+            <select id="alertCondition" aria-label="Alert condition">
+              <option value=">=">≥</option>
+              <option value="<=">≤</option>
+            </select>
+            <input id="alertThreshold" type="number" step="any" min="0" placeholder="Price" required aria-label="Alert price" />
+            <button type="submit">Add</button>
+          </form>
+          <div id="alertList" class="alert-list"></div>
+          <div id="alertToast" class="alert-toast" aria-live="polite" hidden></div>
+          <p class="disclaimer">Alerts notify in this browser. No orders are placed.</p>
+        </article>
+
+        <article class="panel calendar-panel" id="calendar">
+          <div class="panel-head">
+            <h3>Economic Calendar</h3>
+            <span class="badge warn">Curated mock</span>
+          </div>
+          <div id="calendarList" class="calendar-list"></div>
+          <p class="disclaimer">Times are UTC. Events are illustrative until a calendar data provider is connected.</p>
         </article>
       </section>
 

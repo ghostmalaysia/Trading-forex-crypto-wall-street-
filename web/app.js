@@ -18,11 +18,20 @@ const NEWS = [
   { title: 'AI market monitors flag volatility in tech indices', meta: 'AI • 1h ago • System Insight mock' },
 ];
 
+const CALENDAR = [
+  { date: '2026-11-27T13:30:00Z', title: 'US Core PCE Price Index (MoM)', impact: 'high', tags: 'USD • Gold' },
+  { date: '2026-11-27T15:00:00Z', title: 'Federal Reserve Chair remarks', impact: 'medium', tags: 'USD • Gold' },
+  { date: '2026-12-02T15:00:00Z', title: 'ISM Manufacturing PMI', impact: 'medium', tags: 'USD' },
+  { date: '2026-12-04T13:30:00Z', title: 'US Nonfarm Payrolls', impact: 'high', tags: 'USD • Gold' },
+  { date: '2026-12-10T13:30:00Z', title: 'US CPI (YoY)', impact: 'high', tags: 'USD • Gold' },
+  { date: '2026-12-16T19:00:00Z', title: 'FOMC Statement and Dot Plot', impact: 'high', tags: 'USD • Gold' },
+];
+
 const FOCUS = ['XAU/USD', 'DXY'];
 const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
-  configEditing: false, lessons: [], history: [], currentPlan: null, aiProvider: 'local', aiModel: 'rules',
-  chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, rsi: false },
+  configEditing: false, lessons: [], history: [], currentPlan: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
+  chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
 };
 const $ = (id) => document.getElementById(id);
@@ -54,14 +63,22 @@ function renderStats() {
     { label: 'Avg. Move', value: fmtChange(avg), delta: 'Across tracked watchlist', cls: avg >= 0 ? 'up' : 'down' },
   ];
   $('stats').innerHTML = cards.map(c => `<div class="stat"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div><div class="delta ${c.cls}">${c.delta}</div></div>`).join('');
+  const feedLive = state.provider === 'longbridge' || state.marketProvider === 'live' || state.marketProvider === 'partial';
+  const feedLabel = state.provider === 'longbridge'
+    ? 'Live quotes • Longbridge'
+    : state.marketProvider === 'live'
+      ? 'Live quotes • XAU/USD + DXY feed'
+      : state.marketProvider === 'partial'
+        ? 'Partial live feed • some symbols simulated'
+        : `Mock data${state.providerDetail ? ` • ${state.providerDetail}` : ' • no live provider connected'}`;
   const status = document.querySelector('.sidebar-card small');
-  if (status) status.textContent = state.provider === 'longbridge' ? 'Live quotes • Longbridge' : `Mock data${state.providerDetail ? ` • ${state.providerDetail}` : ' • no live provider connected'}`;
+  if (status) status.textContent = feedLabel;
   const dot = document.querySelector('.sidebar-card .dot');
-  if (dot) dot.classList.toggle('offline', state.provider !== 'longbridge');
+  if (dot) dot.classList.toggle('offline', !feedLive);
   const barProvider = $('statusProvider');
-  if (barProvider) barProvider.textContent = state.provider === 'longbridge' ? 'LIVE LONGBRIDGE' : 'SIMULATED';
+  if (barProvider) barProvider.textContent = feedLive ? (state.provider === 'longbridge' ? 'LIVE LONGBRIDGE' : `LIVE ${state.marketProvider.toUpperCase()}`) : 'SIMULATED';
   const barDot = $('statusDot');
-  if (barDot) barDot.classList.toggle('offline', state.provider !== 'longbridge');
+  if (barDot) barDot.classList.toggle('offline', !feedLive);
 }
 
 function renderTicker() {
@@ -111,6 +128,110 @@ function seriesForTimeframe(item) {
   return map[state.timeframe] || item.history;
 }
 
+function renderCalendar() {
+  $('calendarList').innerHTML = CALENDAR.map(event => {
+    const date = new Date(event.date);
+    const stamp = date.toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+    return `<div class="calendar-item ${event.impact}">
+      <span class="calendar-time">${stamp}</span>
+      <span class="calendar-title">${escapeHtml(event.title)}<small>${escapeHtml(event.tags)}</small></span>
+      <span class="calendar-impact">${event.impact}</span>
+    </div>`;
+  }).join('');
+}
+
+async function loadAlerts() {
+  state.alerts = [];
+  if (!window.SupabaseMemory?.enabled || !state.userKey) return;
+  try {
+    const result = await window.SupabaseMemory.loadAlerts(50);
+    if (result.ok && result.data?.length) {
+      state.alerts = result.data.map(row => ({
+        id: row.id,
+        symbol: row.symbol,
+        condition: row.condition,
+        threshold: Number(row.threshold),
+        active: row.active !== false,
+        triggered: !!row.triggered_at,
+        triggeredAt: row.triggered_at || null,
+      }));
+    }
+  } catch { setAuthStatus('Alerts could not be loaded; check Supabase policies.'); }
+}
+
+function renderAlerts() {
+  const list = $('alertList');
+  const activeCount = state.alerts.filter(alert => alert.active && !alert.triggered).length;
+  $('alertCount').textContent = `${activeCount} active`;
+  if (!state.alerts.length) {
+    list.innerHTML = '<div class="alert-empty">Tiada alert. Tambah untuk XAU/USD atau DXY.</div>';
+    return;
+  }
+  list.innerHTML = state.alerts.map(alert => `
+    <div class="alert-item ${alert.triggered ? 'triggered' : ''}">
+      <span>${escapeHtml(alert.symbol)} ${alert.condition === '>=' ? '≥' : '≤'} ${fmtPrice(Number(alert.threshold))}${alert.triggered ? ' ✓' : ''}</span>
+      <span>${alert.triggered ? 'hit' : FOCUS.includes(alert.symbol) ? 'armed' : 'off-focus'}</span>
+      <button type="button" data-alert-id="${escapeHtml(alert.id || '')}">del</button>
+    </div>`).join('');
+  list.querySelectorAll('button[data-alert-id]').forEach(button => button.addEventListener('click', async () => {
+    const id = button.dataset.alertId;
+    state.alerts = state.alerts.filter(alert => String(alert.id) !== id);
+    renderAlerts();
+    if (window.SupabaseMemory?.enabled && id) {
+      try { await window.SupabaseMemory.deleteAlert(id); }
+      catch { setAuthStatus('Alert removed locally; cloud delete failed.'); }
+    }
+  }));
+}
+
+async function addAlert(event) {
+  event.preventDefault();
+  const symbol = $('alertSymbol').value;
+  const condition = $('alertCondition').value;
+  const threshold = Number($('alertThreshold').value);
+  if (!FOCUS.includes(symbol) || !Number.isFinite(threshold) || threshold <= 0) return;
+  const alert = { id: `local-${Date.now()}`, symbol, condition, threshold, active: true, triggered: false, triggeredAt: null };
+  state.alerts.unshift(alert);
+  $('alertThreshold').value = '';
+  renderAlerts();
+  if (window.SupabaseMemory?.enabled) {
+    try {
+      const result = await window.SupabaseMemory.saveAlert(alert);
+      if (result?.data?.[0]?.id) alert.id = result.data[0].id;
+      renderAlerts();
+    } catch { setAuthStatus('Alert saved locally; cloud save failed.'); }
+  }
+}
+
+let alertToastTimer;
+function showAlertToast(message) {
+  const el = $('alertToast');
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(alertToastTimer);
+  alertToastTimer = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+function checkAlerts() {
+  const triggered = state.alerts.filter(alert => {
+    if (!alert.active || alert.triggered || !FOCUS.includes(alert.symbol)) return false;
+    const item = MARKET.find(m => m.symbol === alert.symbol);
+    if (!item) return false;
+    return alert.condition === '>=' ? item.price >= alert.threshold : item.price <= alert.threshold;
+  });
+  if (!triggered.length) return;
+  triggered.forEach(alert => {
+    alert.triggered = true;
+    alert.active = false;
+    alert.triggeredAt = new Date().toISOString();
+    showAlertToast(`${alert.symbol} ${alert.condition === '>=' ? '≥' : '≤'} ${fmtPrice(alert.threshold)} — alert triggered. No order placed.`);
+    if (window.SupabaseMemory?.enabled && alert.id && !String(alert.id).startsWith('local-')) {
+      window.SupabaseMemory.triggerAlert(alert.id).catch(() => {});
+    }
+  });
+  renderAlerts();
+}
+
 function rsiSeries(values, period = 14) {
   const result = Array(values.length).fill(null);
   if (values.length <= period) return result;
@@ -137,6 +258,30 @@ function movingAverage(values, period, index) {
   let sum = 0;
   for (let i = index - period + 1; i <= index; i++) sum += values[i];
   return sum / period;
+}
+
+function emaSeries(values, period) {
+  const result = Array(values.length).fill(null);
+  if (values.length < period) return result;
+  const multiplier = 2 / (period + 1);
+  let seed = 0;
+  for (let i = 0; i < period; i++) seed += values[i];
+  let ema = seed / period;
+  result[period - 1] = ema;
+  for (let i = period; i < values.length; i++) {
+    ema = values[i] * multiplier + ema * (1 - multiplier);
+    result[i] = ema;
+  }
+  return result;
+}
+
+function bollingerBand(values, period, index, deviations = 2) {
+  if (index < period - 1) return null;
+  const mean = movingAverage(values, period, index);
+  let variance = 0;
+  for (let i = index - period + 1; i <= index; i++) variance += (values[i] - mean) ** 2;
+  const sd = Math.sqrt(variance / period);
+  return { upper: mean + deviations * sd, lower: mean - deviations * sd };
 }
 
 function resetChartView() {
@@ -172,7 +317,8 @@ function drawChart() {
   ctx.clearRect(0, 0, cssW, cssH);
 
   const pad = { l: 50, r: 14, t: 16, x: 0 };
-  const mainBottom = state.indicators.rsi ? cssH - 88 : cssH - 26;
+  const paneCount = (state.indicators.rsi ? 1 : 0) + (state.indicators.macd ? 1 : 0);
+  const mainBottom = cssH - 26 - paneCount * 78;
   const plotW = cssW - pad.l - pad.r;
   const plotH = mainBottom - pad.t;
   const x = i => pad.l + (i / (data.length - 1)) * plotW;
@@ -237,6 +383,24 @@ function drawChart() {
   if (state.indicators.ma20) { ctx.strokeStyle = '#ffb020'; drawMa(20); }
   if (state.indicators.ma50) { ctx.strokeStyle = '#22d3ee'; drawMa(50); }
 
+  if (state.indicators.bb) {
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = '#a78bfa';
+    ['upper', 'lower'].forEach(side => {
+      ctx.beginPath();
+      let bbStarted = false;
+      data.forEach((_, i) => {
+        const band = bollingerBand(all, 20, start + i);
+        if (!band) return;
+        const px = x(i), py = y(band[side]);
+        if (bbStarted) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+        bbStarted = true;
+      });
+      ctx.lineWidth = 1; ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+
   ctx.setLineDash([4, 3]);
   state.drawings.forEach(drawing => {
     if (drawing.type === 'hline') {
@@ -277,10 +441,10 @@ function drawChart() {
   }
   ctx.setLineDash([]);
 
+  let paneTop = mainBottom + 8;
   if (state.indicators.rsi) {
-    const rsiTop = mainBottom + 10;
-    const rsiBottom = cssH - 24;
-    const rsiHeight = rsiBottom - rsiTop;
+    const rsiTop = paneTop;
+    const rsiHeight = 60;
     ctx.fillStyle = '#080e18'; ctx.fillRect(pad.l, rsiTop, plotW, rsiHeight);
     [30, 50, 70].forEach(level => {
       const ly = rsiTop + rsiHeight - (level / 100) * rsiHeight;
@@ -301,6 +465,48 @@ function drawChart() {
     });
     ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.3; ctx.stroke();
     ctx.fillStyle = '#7589a5'; ctx.font = '9px monospace'; ctx.fillText('RSI14', pad.l + 5, rsiTop + 11);
+    paneTop += rsiHeight + 8;
+  }
+
+  if (state.indicators.macd) {
+    const macdTop = paneTop;
+    const macdHeight = 60;
+    ctx.fillStyle = '#080e18'; ctx.fillRect(pad.l, macdTop, plotW, macdHeight);
+    const fast = emaSeries(all, 12);
+    const slow = emaSeries(all, 26);
+    const macd = all.map((_, i) => fast[i] != null && slow[i] != null ? fast[i] - slow[i] : 0);
+    const signal = emaSeries(macd, 9);
+    const values = [];
+    data.forEach((_, i) => {
+      const idx = start + i;
+      if (slow[idx] == null || signal[idx] == null) return;
+      values.push(macd[idx], signal[idx]);
+    });
+    const maxAbs = Math.max(0.000001, ...values.map(Math.abs));
+    const macdY = value => macdTop + macdHeight / 2 - (value / maxAbs) * (macdHeight / 2 - 4);
+    const zero = macdTop + macdHeight / 2;
+    ctx.strokeStyle = '#26364e'; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(pad.l, zero); ctx.lineTo(cssW - pad.r, zero); ctx.stroke();
+    data.forEach((_, i) => {
+      const idx = start + i;
+      if (slow[idx] == null || signal[idx] == null) return;
+      const value = macd[idx] - signal[idx];
+      ctx.fillStyle = value >= 0 ? 'rgba(0,214,143,.35)' : 'rgba(255,77,94,.35)';
+      ctx.fillRect(x(i) - Math.max(1, band * 0.3), Math.min(zero, macdY(value)), Math.max(2, band * 0.6), Math.abs(macdY(value) - zero));
+    });
+    [[macd, '#22d3ee'], [signal, '#ffb020']].forEach(([series, color]) => {
+      ctx.beginPath();
+      let started = false;
+      data.forEach((_, i) => {
+        const idx = start + i;
+        if (slow[idx] == null || signal[idx] == null) return;
+        const px = x(i), py = macdY(series[idx]);
+        if (started) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+        started = true;
+      });
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.stroke();
+    });
+    ctx.fillStyle = '#7589a5'; ctx.font = '9px monospace'; ctx.fillText('MACD 12,26,9', pad.l + 5, macdTop + 11);
   }
 
   ctx.fillStyle = '#4a5f7d'; ctx.font = '9px monospace';
@@ -316,9 +522,10 @@ function drawChart() {
   badge.style.color = c.change >= 0 ? '#9ff0bf' : '#ffb3b3';
   badge.style.background = c.change >= 0 ? 'rgba(46,204,113,.12)' : 'rgba(255,107,107,.12)';
   badge.style.borderColor = c.change >= 0 ? 'rgba(46,204,113,.25)' : 'rgba(255,107,107,.25)';
-  const source = c.dataSource === 'longbridge' ? 'Longbridge live quote' : 'Simulated data';
+  const isLive = c.dataSource === 'longbridge' || c.dataSource === 'market';
+  const source = c.dataSource === 'longbridge' ? 'Longbridge live quote' : c.dataSource === 'market' ? `Live feed • ${c.providerSymbol || c.symbol}` : 'Simulated data';
   const sourceEl = $('chartSource');
-  if (sourceEl) { sourceEl.textContent = c.dataSource === 'longbridge' ? 'LIVE' : 'SIM'; sourceEl.classList.toggle('live', c.dataSource === 'longbridge'); }
+  if (sourceEl) { sourceEl.textContent = isLive ? 'LIVE' : 'SIM'; sourceEl.classList.toggle('live', isLive); }
   $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(c.price)}</strong></span><span>High: ${fmtPrice(rawHigh)}</span><span>Low: ${fmtPrice(rawLow)}</span><span>Bars: ${count}</span><span>Source: ${source}</span>`;
 }
 
@@ -670,6 +877,8 @@ async function finishSignIn() {
   updateAuthUI();
   await initChat();
   await persistProfile();
+  await loadAlerts();
+  renderAlerts();
   try {
     await window.SupabaseMemory.saveWatchlist(MARKET.map(m => ({ user_key: state.userKey, symbol: m.symbol, market: m.market })));
   } catch { setAuthStatus('Signed in. Watchlist could not be synced; check the Supabase migration and RLS policies.'); }
@@ -729,6 +938,36 @@ function randomWalk() {
   });
 }
 
+async function refreshMarketData() {
+  try {
+    const response = await fetch('/api/market', { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Market feed unavailable');
+    state.marketProvider = payload.provider || 'mock';
+    for (const item of payload.items || []) {
+      const target = MARKET.find(m => m.symbol === item.symbol);
+      if (!target || !Number.isFinite(item.price) || item.price <= 0) continue;
+      target.price = item.price;
+      if (Number.isFinite(item.previousClose) && item.previousClose > 0) {
+        target.referencePrice = item.previousClose;
+        target.change = +((target.price / target.referencePrice - 1) * 100).toFixed(2);
+      }
+      if (Array.isArray(item.series) && item.series.length > 2) {
+        target.history = item.series.slice(-60);
+      } else {
+        target.history.push(target.price);
+        if (target.history.length > 60) target.history.shift();
+      }
+      target.dataSource = 'market';
+      target.providerSymbol = item.providerSymbol || null;
+      target.feedLabel = item.label || null;
+    }
+  } catch {
+    state.marketProvider = 'mock';
+  }
+  checkAlerts();
+}
+
 async function refreshLongbridgeQuotes() {
   const symbols = MARKET.filter(m => m.market === 'Stocks').map(m => m.symbol);
   try {
@@ -766,7 +1005,7 @@ function resetPlan() {
   $('rejectPlanBtn').disabled = false;
 }
 
-function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderNews(); drawChart(); }
+function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderNews(); renderCalendar(); drawChart(); }
 
 async function persistProfile() {
   if (!window.SupabaseMemory?.enabled) return;
@@ -781,10 +1020,11 @@ async function persistProfile() {
 function bind() {
   $('symbolSelect').addEventListener('change', async e => { state.selected = e.target.value; resetPlan(); resetChartView(); renderAll(); await persistProfile(); });
   $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); resetChartView(); drawChart(); await persistProfile(); });
-  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); });
+  $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); });
   $('planBtn').addEventListener('click', submitPlan);
   $('approvePlanBtn').addEventListener('click', () => decidePlan('approved'));
   $('rejectPlanBtn').addEventListener('click', () => decidePlan('rejected'));
+  $('alertForm').addEventListener('submit', addAlert);
   $('configEditBtn').addEventListener('click', openConfig);
   $('configForm').addEventListener('submit', event => { event.preventDefault(); applyConfigFromForm(false); });
   $('configTestBtn').addEventListener('click', () => applyConfigFromForm(true));
@@ -796,6 +1036,8 @@ function bind() {
   $('signOutBtn').addEventListener('click', async () => {
     try { await window.SupabaseMemory.signOut(); } catch {}
     state.userKey = null;
+    state.alerts = [];
+    renderAlerts();
     updateAuthUI();
     await initChat();
   });
@@ -816,6 +1058,9 @@ async function boot() {
   tickClock();
   checkAiStatus();
   await initChat();
+  await loadAlerts();
+  renderAlerts();
+  refreshMarketData();
   if (window.SupabaseMemory?.enabled) {
     state.memoryReady = true;
     await persistProfile();
@@ -825,7 +1070,8 @@ async function boot() {
   }
   setInterval(tickClock, 1000);
   refreshLongbridgeQuotes();
-  setInterval(() => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); }, 15000);
+  refreshMarketData();
+  setInterval(() => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); }, 60000);
 }
 
 boot();

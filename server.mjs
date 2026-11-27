@@ -13,6 +13,11 @@ const port = Number(process.env.PORT || 8080);
 const host = '127.0.0.1';
 const pending = new Map();
 const aiHits = new Map();
+const marketTargets = {
+  'XAU/USD': { providerSymbol: 'GC=F', label: 'Gold futures proxy' },
+  DXY: { providerSymbol: 'DX-Y.NYB', label: 'US Dollar Index' },
+};
+const marketCache = { payload: null, fetchedAt: 0 };
 let rpcId = 0;
 let rpcProcess;
 let rpcBuffer = '';
@@ -111,6 +116,57 @@ async function readBody(req) {
   });
 }
 
+async function fetchMarketTarget(symbol, target) {
+  const base = process.env.MARKET_DATA_BASE_URL || 'https://query1.finance.yahoo.com';
+  const interval = process.env.MARKET_DATA_INTERVAL || '1d';
+  const range = process.env.MARKET_DATA_RANGE || '1mo';
+  const endpoint = `${base.replace(/\/$/, '')}/v8/finance/chart/${encodeURIComponent(target.providerSymbol)}?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
+  const response = await fetch(endpoint, {
+    headers: { 'User-Agent': 'TradeWall/1.0', Accept: 'application/json' },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error(`Market feed HTTP ${response.status}`);
+  const payload = await response.json();
+  const result = payload?.chart?.result?.[0];
+  if (payload?.chart?.error || !result) throw new Error(payload?.chart?.error?.description || 'Market feed returned no result');
+  const meta = result.meta || {};
+  const closes = (result.indicators?.quote?.[0]?.close || []).map(Number).filter(value => Number.isFinite(value) && value > 0);
+  const price = Number(meta.regularMarketPrice ?? closes[closes.length - 1]);
+  const previousClose = Number(meta.chartPreviousClose ?? meta.previousClose ?? closes[closes.length - 2]);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('Market feed returned no usable price');
+  return {
+    symbol,
+    providerSymbol: target.providerSymbol,
+    label: target.label,
+    price: +price.toFixed(price > 100 ? 2 : 5),
+    previousClose: Number.isFinite(previousClose) && previousClose > 0 ? +previousClose.toFixed(previousClose > 100 ? 2 : 5) : null,
+    series: closes.slice(-60),
+    currency: meta.currency || null,
+    exchange: meta.exchangeName || null,
+  };
+}
+
+async function marketSnapshot() {
+  const now = Date.now();
+  const ttl = Math.max(15, Number(process.env.MARKET_DATA_TTL_SECONDS) || 60) * 1000;
+  if (marketCache.payload && now - marketCache.fetchedAt < ttl) return marketCache.payload;
+  const entries = await Promise.all(Object.entries(marketTargets).map(async ([symbol, target]) => {
+    try { return await fetchMarketTarget(symbol, target); }
+    catch (error) { return { symbol, error: error.message }; }
+  }));
+  const items = entries.filter(item => !item.error);
+  const payload = {
+    provider: items.length === Object.keys(marketTargets).length ? 'live' : items.length ? 'partial' : 'mock',
+    fetchedAt: new Date(now).toISOString(),
+    items,
+    errors: entries.filter(item => item.error),
+    note: 'XAU/USD uses GC=F futures as a proxy; DXY uses DX-Y.NYB. Prices are indicative only.',
+  };
+  marketCache.payload = payload;
+  marketCache.fetchedAt = now;
+  return payload;
+}
+
 function sanitizeContext(value) {
   if (!value || typeof value !== 'object') return {};
   const text = (item, length = 160) => typeof item === 'string' ? item.slice(0, length) : '';
@@ -151,7 +207,12 @@ async function handle(req, res) {
       detail: rpcReady ? null : rpcError,
       aiProvider: providerName(),
       aiModel: modelName(),
+      marketProvider: marketCache.payload?.provider || 'mock',
     });
+  }
+  if (url.pathname === '/api/market') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, await marketSnapshot());
   }
   if (url.pathname === '/api/ai') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
