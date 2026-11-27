@@ -108,6 +108,16 @@ create table if not exists public.live_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.push_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_key text not null,
+  token text not null,
+  platform text not null default 'expo',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_key, token)
+);
+
 create index if not exists idx_watchlists_user_key on public.watchlists(user_key);
 create index if not exists idx_ai_memory_user_key_created on public.ai_memory(user_key, created_at desc);
 create index if not exists idx_alerts_user_key_active on public.alerts(user_key, active);
@@ -118,6 +128,7 @@ create index if not exists idx_paper_orders_user_key_created on public.paper_ord
 create index if not exists idx_ai_evaluations_user_key_created on public.ai_evaluations(user_key, created_at desc);
 create index if not exists idx_live_events_user_key_created on public.live_events(user_key, created_at desc);
 create index if not exists idx_live_events_proposal_ref on public.live_events(proposal_ref);
+create index if not exists idx_push_tokens_user_key_created on public.push_tokens(user_key, created_at desc);
 
 -- Authenticated users can access only rows whose user_key matches their Auth UUID.
 alter table public.user_profiles enable row level security;
@@ -130,6 +141,7 @@ alter table public.audit_logs enable row level security;
 alter table public.paper_orders enable row level security;
 alter table public.ai_evaluations enable row level security;
 alter table public.live_events enable row level security;
+alter table public.push_tokens enable row level security;
 
 drop policy if exists "anon_profiles_mvp" on public.user_profiles;
 drop policy if exists "anon_watchlists_mvp" on public.watchlists;
@@ -146,6 +158,7 @@ drop policy if exists "paper_orders_own_rows" on public.paper_orders;
 drop policy if exists "ai_evaluations_own_rows" on public.ai_evaluations;
 drop policy if exists "live_events_own_rows_select" on public.live_events;
 drop policy if exists "live_events_own_rows_insert" on public.live_events;
+drop policy if exists "push_tokens_own_rows" on public.push_tokens;
 
 create policy "profiles_own_rows" on public.user_profiles
   for all to authenticated using ((select auth.uid())::text = user_key)
@@ -178,7 +191,10 @@ create policy "live_events_own_rows_select" on public.live_events
   for select to authenticated using ((select auth.uid())::text = user_key);
 create policy "live_events_own_rows_insert" on public.live_events
   for insert to authenticated with check ((select auth.uid())::text = user_key);
+create policy "push_tokens_own_rows" on public.push_tokens
+  for all to authenticated using ((select auth.uid())::text = user_key)
+  with check ((select auth.uid())::text = user_key);
 
-revoke all privileges on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs, public.paper_orders, public.ai_evaluations, public.live_events from anon;
-grant select, insert, update, delete on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs, public.paper_orders, public.ai_evaluations to authenticated;
+revoke all privileges on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs, public.paper_orders, public.ai_evaluations, public.live_events, public.push_tokens from anon;
+grant select, insert, update, delete on public.user_profiles, public.watchlists, public.ai_memory, public.alerts, public.ai_learning, public.trade_plans, public.audit_logs, public.paper_orders, public.ai_evaluations, public.push_tokens to authenticated;
 grant select, insert on public.live_events to authenticated;

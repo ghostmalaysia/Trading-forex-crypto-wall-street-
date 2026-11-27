@@ -28,13 +28,15 @@ const CALENDAR = [
 ];
 
 const FOCUS = ['XAU/USD', 'DXY'];
+const chartTemplateKey = 'tradewall_chart_templates';
 const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
-  monitor: null, broker: null, backtest: null, paperOrders: [],
+  monitor: null, broker: null, backtest: null, paperOrders: [], screener: null, summary: null,
   liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null, auditLogs: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
+  chartTemplates: {}, serverSession: { configured: false, authenticated: false },
 };
 const $ = (id) => document.getElementById(id);
 
@@ -110,6 +112,28 @@ function renderWatchlist() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectSymbol(); }
     });
   });
+}
+
+function renderScreener() {
+  const payload = state.screener;
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  $('screenerProvider').textContent = payload ? String(payload.adapter || payload.provider || '--').toUpperCase() : '--';
+  $('screenerBody').innerHTML = rows.length ? rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.symbol)}</td>
+      <td>${fmtPrice(Number(row.price) || 0)}</td>
+      <td class="${Number(row.changePct) >= 0 ? 'up' : 'down'}">${fmtChange(Number(row.changePct) || 0)}</td>
+      <td><span class="market-tag">${escapeHtml(row.bias || 'unavailable')}</span></td>
+    </tr>`).join('') : '<tr><td colspan="4" class="muted">Screener unavailable; using local watchlist.</td></tr>';
+}
+
+function renderMarketSummary() {
+  const summary = state.summary;
+  const node = $('marketSummary');
+  if (!node) return;
+  if (!summary) { node.innerHTML = '<p class="muted">Tiada ringkasan lagi.</p>'; return; }
+  const bullets = Array.isArray(summary.bullets) ? summary.bullets : [];
+  node.innerHTML = `<div class="risk-list">${bullets.map(bullet => `<div class="risk-item"><span>${escapeHtml(bullet)}</span></div>`).join('')}</div>${summary.aiSummary ? `<p class="disclaimer">${escapeHtml(summary.aiSummary)}</p>` : ''}`;
 }
 
 function renderNews() {
@@ -294,6 +318,69 @@ function resetChartView() {
   state.crosshair = null;
   state.drawings = [];
   state.pendingTrend = null;
+}
+
+function loadChartTemplates() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(chartTemplateKey) || '{}');
+    state.chartTemplates = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch { state.chartTemplates = {}; }
+  refreshTemplateOptions();
+}
+
+function persistChartTemplates() {
+  try { localStorage.setItem(chartTemplateKey, JSON.stringify(state.chartTemplates)); }
+  catch {}
+}
+
+function refreshTemplateOptions(selected = '') {
+  const select = $('chartTemplateSelect');
+  if (!select) return;
+  const names = Object.keys(state.chartTemplates).sort();
+  select.innerHTML = `<option value="">Template…</option>${names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
+  if (selected && state.chartTemplates[selected]) select.value = selected;
+}
+
+function saveChartTemplate() {
+  const suggested = `${state.selected} ${state.timeframe}`;
+  const name = String(window.prompt('Chart template name', suggested) || '').trim().slice(0, 60);
+  if (!name) return;
+  state.chartTemplates[name] = {
+    symbol: state.selected,
+    timeframe: state.timeframe,
+    chartType: state.chartType,
+    indicators: { ...state.indicators },
+    drawings: state.drawings.map(item => ({ ...item })),
+  };
+  persistChartTemplates();
+  refreshTemplateOptions(name);
+}
+
+function applyChartTemplate() {
+  const name = $('chartTemplateSelect')?.value || '';
+  const template = state.chartTemplates[name];
+  if (!template) return;
+  if (template.symbol !== state.selected || template.timeframe !== state.timeframe) {
+    state.selected = template.symbol;
+    state.timeframe = template.timeframe;
+    $('symbolSelect').value = state.selected;
+    $('timeframeSelect').value = state.timeframe;
+  }
+  state.chartType = template.chartType === 'line' ? 'line' : 'candle';
+  state.indicators = { ...state.indicators, ...(template.indicators || {}) };
+  state.drawings = Array.isArray(template.drawings) ? template.drawings.map(item => ({ ...item })) : [];
+  state.pendingTrend = null;
+  document.querySelectorAll('[data-chart-type]').forEach(button => button.classList.toggle('active', button.dataset.chartType === state.chartType));
+  document.querySelectorAll('[data-indicator]').forEach(button => button.classList.toggle('active', !!state.indicators[button.dataset.indicator]));
+  drawChart();
+}
+
+function deleteChartTemplate() {
+  const name = $('chartTemplateSelect')?.value || '';
+  if (!name || !state.chartTemplates[name]) return;
+  delete state.chartTemplates[name];
+  persistChartTemplates();
+  refreshTemplateOptions();
 }
 
 function drawChart() {
@@ -1290,6 +1377,79 @@ function randomWalk() {
   });
 }
 
+async function loadScreener() {
+  try {
+    const response = await fetch('/api/screener', { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Screener unavailable');
+    state.screener = payload;
+  } catch { state.screener = null; }
+  renderScreener();
+}
+
+async function generateSummary() {
+  const button = $('summaryBtn');
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch('/api/summary', { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Summary unavailable');
+    state.summary = payload;
+    renderMarketSummary();
+  } catch (error) {
+    $('marketSummary').innerHTML = `<p class="muted">${escapeHtml(error.message || 'Summary unavailable')}</p>`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function checkServerSession() {
+  try {
+    const response = await fetch('/api/session', { cache: 'no-store' });
+    const data = await response.json();
+    state.serverSession = { configured: !!data.configured, authenticated: !!data.authenticated, user: data.user || null };
+  } catch { state.serverSession = { configured: false, authenticated: false, user: null }; }
+  const status = $('serverSessionStatus');
+  const signInButton = $('serverSignInBtn');
+  const signOutButton = $('serverSignOutBtn');
+  if (status) {
+    status.textContent = !state.serverSession.configured
+      ? 'Server session: not configured'
+      : state.serverSession.authenticated
+        ? `Server session: ${state.serverSession.user?.email || 'signed in'}`
+        : 'Server session: signed out';
+  }
+  if (signInButton) signInButton.disabled = !state.serverSession.configured || state.serverSession.authenticated;
+  if (signOutButton) signOutButton.hidden = !state.serverSession.authenticated;
+}
+
+async function serverSignIn() {
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value;
+  try {
+    const response = await fetch('/api/session/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Server sign in failed');
+    $('authPassword').value = '';
+    setAuthStatus('HttpOnly server session active.');
+    await checkServerSession();
+  } catch (error) { setAuthStatus(error.message || 'Server sign in failed.'); }
+}
+
+async function serverSignOut() {
+  try {
+    const response = await fetch('/api/session', { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Server sign out failed');
+    setAuthStatus('HttpOnly server session cleared.');
+  } catch (error) { setAuthStatus(error.message || 'Server sign out failed.'); }
+  await checkServerSession();
+}
+
 async function refreshMarketData() {
   try {
     const response = await fetch('/api/market', { cache: 'no-store' });
@@ -1318,6 +1478,7 @@ async function refreshMarketData() {
     state.marketProvider = 'mock';
   }
   checkAlerts();
+  loadScreener();
 }
 
 async function refreshLongbridgeQuotes() {
@@ -1358,7 +1519,7 @@ function resetPlan() {
   $('rejectPlanBtn').disabled = false;
 }
 
-function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderNews(); renderCalendar(); drawChart(); renderAgent(); }
+function renderAll() { renderStats(); renderTicker(); renderWatchlist(); renderScreener(); renderNews(); renderCalendar(); drawChart(); renderAgent(); }
 
 async function persistProfile() {
   if (!window.SupabaseMemory?.enabled) return;
@@ -1375,6 +1536,12 @@ function bind() {
   $('timeframeSelect').addEventListener('change', async e => { state.timeframe = e.target.value; resetPlan(); resetChartView(); drawChart(); await persistProfile(); });
   $('refreshBtn').addEventListener('click', () => { randomWalk(); renderAll(); refreshLongbridgeQuotes(); refreshMarketData(); });
   $('planBtn').addEventListener('click', submitPlan);
+  $('summaryBtn')?.addEventListener('click', generateSummary);
+  $('saveChartTemplateBtn')?.addEventListener('click', saveChartTemplate);
+  $('applyChartTemplateBtn')?.addEventListener('click', applyChartTemplate);
+  $('deleteChartTemplateBtn')?.addEventListener('click', deleteChartTemplate);
+  $('serverSignInBtn')?.addEventListener('click', serverSignIn);
+  $('serverSignOutBtn')?.addEventListener('click', serverSignOut);
   $('approvePlanBtn').addEventListener('click', () => decidePlan('approved'));
   $('rejectPlanBtn').addEventListener('click', () => decidePlan('rejected'));
   $('alertForm').addEventListener('submit', addAlert);
@@ -1423,10 +1590,13 @@ async function boot() {
   state.userKey = window.SupabaseMemory?.getUserKey?.() || null;
   updateAuthUI();
   renderControls();
+  loadChartTemplates();
   bind();
   renderAll();
+  renderMarketSummary();
   tickClock();
   checkAiStatus();
+  checkServerSession();
   await initChat();
   await loadAlerts();
   renderAlerts();

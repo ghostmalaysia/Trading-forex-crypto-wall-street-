@@ -255,5 +255,22 @@ export function createMobileSupabaseClient({ fetchImpl = fetch, storage = memory
       const data = await authorizedFetch(`${restUrl}/live_events${query}`);
       return { ok: true, data: Array.isArray(data) ? data : [] };
     },
+    async savePushToken(token, platform = 'expo') {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const value = String(token || '').trim();
+      if (!/^Expo(?:nent)?PushToken\[.+\]$/.test(value)) return { ok: false, error: 'invalid_push_token' };
+      return post('/push_tokens?on_conflict=user_key,token', {
+        user_key: session.user.id,
+        token: value,
+        platform: String(platform || 'expo').slice(0, 20),
+        updated_at: new Date().toISOString(),
+      }, 'resolution=merge-duplicates,return=minimal');
+    },
+    async loadPushTokens() {
+      if (!session?.user?.id) return { ok: false, skipped: true };
+      const query = `?user_key=eq.${encodeURIComponent(session.user.id)}&select=token,platform,created_at&order=created_at.desc&limit=20`;
+      const data = await authorizedFetch(`${restUrl}/push_tokens${query}`);
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    },
   };
 }

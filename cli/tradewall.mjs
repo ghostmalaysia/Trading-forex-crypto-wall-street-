@@ -7,6 +7,8 @@ const commands = [
   'health',
   'market',
   'watchlist',
+  'screener',
+  'summary',
   'news',
   'monitor',
   'monitor rules',
@@ -14,6 +16,9 @@ const commands = [
   'broker',
   'audit logs',
   'audit verify',
+  'push status',
+  'push send',
+  'session status',
   'ai',
   'paper order',
   'paper evaluate',
@@ -85,6 +90,12 @@ function liveHeaders(options) {
   return { 'x-live-admin-token': String(token).trim() };
 }
 
+function pushHeaders(options) {
+  const token = options.adminToken || options.pushAdminToken || process.env.TRADEWALL_PUSH_ADMIN_TOKEN || '';
+  if (!String(token).trim()) throw new Error('Provide --admin-token or set TRADEWALL_PUSH_ADMIN_TOKEN.');
+  return { 'x-push-admin-token': String(token).trim() };
+}
+
 function asNumber(value, label) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new Error(`${label} must be a number.`);
@@ -114,6 +125,10 @@ export async function executeCommand(command, options, api, readJson = loadJson)
         })),
       };
     }
+    case 'screener':
+      return { ok: true, command, data: await api.screener() };
+    case 'summary':
+      return { ok: true, command, data: await api.marketSummary() };
     case 'news':
       return { ok: true, command, data: await api.news() };
     case 'monitor':
@@ -132,6 +147,23 @@ export async function executeCommand(command, options, api, readJson = loadJson)
       };
     case 'audit verify':
       return { ok: true, command, data: await api.verifyAudit() };
+    case 'push status':
+      return { ok: true, command, data: await api.pushStatus() };
+    case 'push send': {
+      requireConfirmation(options, 'SEND PUSH');
+      const tokens = options.tokensFile
+        ? await readJson(options.tokensFile)
+        : String(options.tokens || '').split(',').map(token => token.trim()).filter(Boolean);
+      const input = {
+        tokens,
+        title: options.title || 'TradeWall alert',
+        body: requireOption(options, 'body', '--body'),
+        data: options.dataFile ? await readJson(options.dataFile) : {},
+      };
+      return { ok: true, command, data: await api.sendPush(input, pushHeaders(options)) };
+    }
+    case 'session status':
+      return { ok: true, command, data: await api.sessionStatus() };
     case 'ai': {
       const message = requireOption(options, 'message', '--message');
       const context = options.contextFile ? await readJson(options.contextFile) : {};

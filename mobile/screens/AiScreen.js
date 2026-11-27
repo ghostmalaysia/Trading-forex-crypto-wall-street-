@@ -3,7 +3,7 @@ import { Button, ScrollView, StyleSheet, Text, TextInput, View } from 'react-nat
 import { Card, Empty, Row, ScreenHeader, SectionTitle } from '../ui.js';
 import { fmt } from '../format.js';
 
-export default function AiScreen({ messages, question, setQuestion, busy, error, onAsk, onPlan, plan, onClear }) {
+export default function AiScreen({ messages, question, setQuestion, busy, error, onAsk, onPlan, plan, onClear, summary, onSummary }) {
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <ScreenHeader
@@ -32,9 +32,20 @@ export default function AiScreen({ messages, question, setQuestion, busy, error,
         />
         <View style={styles.actions}>
           <Button title="ANALYSE" color="#22d3ee" disabled={busy} onPress={() => onAsk('chat')} />
+          <Button title="SUMMARY" color="#fbbf24" disabled={busy} onPress={onSummary} />
           <Button title="BUILD PLAN" color="#a3e635" disabled={busy} onPress={onPlan} />
         </View>
       </Card>
+
+      {summary ? (
+        <Card>
+          <SectionTitle>MARKET SUMMARY</SectionTitle>
+          {(summary.bullets || []).map((bullet, index) => (
+            <Text key={`${index}-${bullet}`} style={styles.rationale}>• {bullet}</Text>
+          ))}
+          {summary.aiSummary ? <Text style={styles.rationale}>{summary.aiSummary}</Text> : null}
+        </Card>
+      ) : null}
 
       {plan ? (
         <Card>

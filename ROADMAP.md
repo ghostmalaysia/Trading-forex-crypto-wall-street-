@@ -32,7 +32,7 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 **Outcome:** runnable web MVP with mock trading/news/AI experience + Supabase-ready memory.
 
 ## Phase 1 - Live Data & Usable Dashboard
-- [ ] Migrate web to Next.js + TypeScript + Tailwind
+- [x] Next.js migration scaffold with API proxy; the static MVP remains the supported UI
 - [x] Integrate free/indicative market data adapters (Yahoo proxies with mock fallback)
 - [x] Add watchlist persistence in Supabase
 - [x] Integrate curated market/news feeds focused on XAU/USD and DXY
@@ -44,7 +44,7 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 ## Phase 2 - AI Assistant v1
 - [x] `AIProvider` abstraction (rule-based fallback -> Groq)
 - [x] AI chat panel with market/news context
-- [ ] Scheduled summaries: "market open", "daily recap"
+- [x] Scheduled summaries: "market open", "daily recap" with deterministic Malay fallback
 - [x] Alert explanations ("why this moved")
 - [x] User preference memory in Supabase (risk profile, interests)
 - [x] AI feedback capture (thumbs up/down, outcome notes) for learning loop
@@ -56,7 +56,7 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] Expo React Native app scaffold
 - [x] Shared API client package (`shared/api-client.js`)
 - [x] Core screens: dashboard, watchlist, news, AI chat, settings
-- [x] Local alert notifications (Expo Notifications; remote push tokens not yet wired)
+- [x] Local alert notifications plus Expo push token registration and server push sender
 - [x] Supabase Auth and settings/watchlist/chat sync across web/mobile
 
 **Outcome:** Android/iOS companion app with shared cloud memory. Run `cd mobile && npm install && cp .env.example .env && npm start`; set `EXPO_PUBLIC_API_BASE_URL` to a reachable TradeWall server.
@@ -78,8 +78,9 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] Human approval UI/card before any live order on web and mobile
 - [x] Kill switch, circuit breakers, and reconciliation endpoints/jobs
 - [x] Immutable hash-chained audit log for proposals, approvals, orders, broker responses, and verification
+- [x] Configurable `metaapi-http` execution/reconciliation adapter with fail-closed endpoints and server-only credentials
 
-**Outcome:** Guarded live scaffolding is ready and fail-closed. A real live broker adapter plus server credentials must still be configured; every order requires explicit admin/approval confirmation and a fresh risk check.
+**Outcome:** Guarded live scaffolding is ready and fail-closed. Set server credentials and `LIVE_ADAPTER=metaapi-http` with the configured endpoints; every order still requires explicit admin/approval confirmation and a fresh risk check.
 
 ## Phase 6 - Agent-Native Operator Layer
 - [x] JSON CLI (`npm run cli -- ...`) with read-only commands for health, market, watchlist, news, monitor, broker, audit, and AI
@@ -88,4 +89,16 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 - [x] In-app audit trail viewer on web and mobile, plus chain verification
 - [x] Automated CLI, HTTP, and shared-client coverage
 
-**Outcome:** Operators and agents can inspect and drive TradeWall through machine-readable commands without secrets in outputs; audit history is visible in-app and verifiable from CLI/API. Real broker credentials, licensed feeds, push tokens, and production auth remain future work.
+**Outcome:** Operators and agents can inspect and drive TradeWall through machine-readable commands without secrets in outputs; audit history is visible in-app and verifiable from CLI/API.
+
+## Phase 7 - Production Integration Layer
+- [x] `metaapi-http` live execution/reconciliation adapter driven by server-only endpoints and credentials
+- [x] Licensed market-data adapter mode plus `GET /api/screener`
+- [x] Market summaries with scheduled interval support and web/mobile actions
+- [x] Saved chart templates and screener panel on web
+- [x] Expo push token registration, RLS-protected token storage, and admin-guarded `POST /api/notifications/push`
+- [x] Optional server-side HttpOnly Supabase session endpoints with CSRF/origin checks and no browser secrets
+- [x] Next.js migration scaffold with an `/api/[...path]` proxy; static MVP remains intact
+- [x] Automated tests for every new module plus updated API/CLI coverage
+
+**Outcome:** All deferred integration items now have working, fail-closed implementations. External value still depends on credentials/providers (MetaApi endpoints, licensed feed, Expo EAS project ID, Supabase project, and push admin token).

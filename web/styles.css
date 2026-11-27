@@ -21,6 +21,7 @@ body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI"
 .sidebar-card{padding:12px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:var(--radius)}
 .sidebar-card h3{margin:0 0 8px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}.sidebar-card p{margin:0 0 6px;font-size:12px}.sidebar-card small{color:var(--muted);font-size:11px;line-height:1.45}
 .auth-card{display:grid;gap:8px}.auth-status{color:var(--muted);line-height:1.45;font-size:11px}.auth-form,.config-form{display:grid;gap:6px}.auth-form label,.config-form label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.auth-form input,.config-form input{min-width:0;width:100%;padding:8px;font-size:12px}.auth-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.auth-actions button{padding:7px 5px;font-size:11px}.auth-card #signOutBtn,.auth-card #configEditBtn,.auth-card #configClearBtn{padding:8px;font-size:11px}.config-hint{color:var(--muted);font-size:10px;line-height:1.35}
+.server-session{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:8px}.server-session small{color:var(--muted);font-family:var(--mono);font-size:10px;line-height:1.4}.server-session button{padding:7px 5px;font-size:10px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 0 3px rgba(0,214,143,.14)}
 .dot.offline{background:var(--warn);box-shadow:0 0 0 3px rgba(255,176,32,.14)}
 .main{padding:0 18px 42px;min-width:0}
@@ -56,6 +57,7 @@ button.primary{background:linear-gradient(180deg,#2f7fe8,#1e5fbe);border-color:#
 .chart-tools{display:flex;gap:4px;align-items:center}
 .chart-tools button{padding:4px 8px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--panel2)}
 .chart-tools button.active{color:#fff;border-color:var(--accent);background:rgba(61,139,255,.15)}
+.chart-tools select{padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--panel2);border:1px solid var(--line2);border-radius:3px;max-width:130px}
 .tool-sep{width:1px;height:17px;background:var(--line2);margin:0 3px}
 .time-pill{font-family:var(--mono);font-size:10px;padding:4px 9px;border:1px solid var(--line2);border-radius:4px;color:var(--muted);background:var(--panel2)}
 .time-pill.active{border-color:var(--accent);color:#fff;background:rgba(61,139,255,.15)}

@@ -33,8 +33,9 @@
         |         - Observe / Paper / Live-confirm-required
         |
         +--> [Execution Adapter]
-                  - Paper broker simulator (default)
-                  - MetaApi / MT5 bridge (later)
+                   - Paper broker simulator (default)
+                   - metaapi-http adapter (configurable, off by default)
+                   - MetaApi / MT5 bridge (operator-configured)
                         |
                         v
                    [MT5 Broker Account]
@@ -80,12 +81,14 @@
 3. **Live (guarded)**: MetaApi/bridge integration; user approval per order; strict risk gate + kill switch.
 4. **Agent workflows**: scheduled monitoring, alerts, post-trade review; continuous learning from approved outcomes.
 
-## Current implementation status (Phase 5)
+## Current implementation status (Phase 7)
 - Guarded-live endpoints are `/api/live/status`, `/api/live/proposal`, `/api/live/approve`, `/api/live/order`, `/api/live/kill-switch`, `/api/live/reconcile`, and `/api/audit/verify`.
-- Credentials are read only from server environment variables; browser/mobile clients receive status and fingerprints, never tokens.
-- The default `LIVE_ADAPTER=disabled` fails closed. A real adapter goes in `ai/adapters/<name>.mjs` and receives a credential provider, not raw secrets.
+- Credentials are read only from server environment variables and the token vault; browser/mobile clients receive status and fingerprints, never tokens.
+- The default `LIVE_ADAPTER=disabled` fails closed. The bundled `ai/adapters/metaapi-http.mjs` posts to operator-supplied `METAAPI_ORDER_URL` / `METAAPI_RECONCILE_URL` endpoints with server-only credentials; URLs may contain `{accountId}`. Custom adapters can still be added in `ai/adapters/<name>.mjs` and receive a credential provider, not raw secrets.
 - Every live order requires `APPROVE LIVE`, `EXECUTE LIVE`, a fresh deterministic risk pass, an available adapter, an armed-but-disarmed kill switch, and a closed circuit breaker.
+- Adapter responses are normalized to scalar-safe fields, and failures return sanitized blocked results without echoing tokens or raw provider errors.
 - Audit records are SHA-256 hash-chained in `data/audit.jsonl`; `/api/audit/verify` validates the chain. Live event metadata can also be stored per user in Supabase `live_events`.
+- Validation with a demo MetaApi/MT5 account remains a credential-dependent task; no broker account was available during implementation.
 
 ## References
 - [MetaApi Cloud](https://metaapi.cloud/) / [Docs](https://metaapi.cloud/docs/client/) / [Python SDK](https://github.com/metaapi/metaapi-python-sdk)

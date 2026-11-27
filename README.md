@@ -6,11 +6,12 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `ARCHITECTURE.md` - system design, stack, modules, data flow
 - `ROADMAP.md` - phased delivery plan
 - `web/` - runnable static MVP dashboard (no build required)
+- `next/` - Next.js migration scaffold with an `/api/[...path]` proxy to the Node server
 - `mobile/` - Expo app scaffold consuming the same Node APIs
-- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs, live events)
-- `ai/` - AI prompt/provider/plan modules plus safe agent and guarded-live modules (monitor, backtest, execution, broker, audit chain, token vault, risk gate, approvals, circuit breaker, reconciliation)
+- `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs, live events, push tokens)
+- `ai/` - AI prompt/provider/plan modules plus safe agent, guarded-live, market adapter, summary, push, and session modules
 - `cli/` - agent-native JSON CLI for read-only inspection and guarded write workflows
-- `tests/` - automated AI, HTTP, agent, live guard, CLI, shared client, and mobile cloud client tests
+- `tests/` - automated AI, HTTP, agent, live guard, market/push/session/summary adapter, CLI, shared client, and mobile cloud client tests
 - `shared/` - API client and curated feed data shared by server and mobile
 - `docs/` - product notes, references, and integration plan
 - `Dockerfile` / `docker-compose.yml` - container deployment config
@@ -31,6 +32,10 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Agent Lab: background monitor rules/anomaly events, educational SMA-cross backtest, paper order simulation, evaluation feedback, and broker status
 - Guarded-live controls: server-side token vault, deterministic risk gate, HMAC approval, kill switch, circuit breaker, reconciliation, and hash-chained audit verification
 - Audit trail viewer with event filters plus CLI commands for machine-readable inspection and guarded workflows
+- Rule-based screener panel (`GET /api/screener`) and saved chart templates in browser storage
+- Market summaries in Malay (`GET /api/summary`) with optional schedule via `SUMMARY_INTERVAL_SECONDS`
+- Remote Expo push token registration and admin-guarded `POST /api/notifications/push`
+- Optional HttpOnly server sessions (`/api/session*`) with same-origin protection and no browser secrets
 - Server-side monitor interval with audit events for monitor, backtest, paper order, evaluation, and guarded-live actions
 - Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
@@ -58,6 +63,10 @@ The CLI emits JSON by default and never prints tokens. Read-only commands need n
 ```bash
 npm run cli -- help
 npm run cli -- market --pretty
+npm run cli -- screener
+npm run cli -- summary
+npm run cli -- push status
+npm run cli -- session status
 npm run cli -- audit logs --limit 20 --event live_order_result
 npm run cli -- audit verify
 npm run cli -- live status
@@ -71,6 +80,7 @@ npm run cli -- live proposal --plan-file plan.json --risk-file risk.json --conte
 npm run cli -- live approve --proposal-id live-123 --confirm "APPROVE LIVE"
 npm run cli -- live order --approval-file approval.json --confirm "EXECUTE LIVE"
 npm run cli -- live kill-switch --enabled false --confirm "DISABLE KILL SWITCH"
+npm run cli -- push send --tokens "ExpoPushToken[device]" --body "XAU/USD alert" --confirm "SEND PUSH" --admin-token "$TRADEWALL_PUSH_ADMIN_TOKEN"
 ```
 
 Set `TRADEWALL_API_BASE_URL` (or `--base`) to target a different server. The default adapter still blocks live orders unless the server is configured with a real adapter.
@@ -112,7 +122,19 @@ Live trading is opt-in and fail-closed. The kill switch is armed unless `LIVE_KI
 
 The flow is `POST /api/live/proposal` -> `POST /api/live/approve` -> `POST /api/live/order`. The exact confirmations are `APPROVE LIVE` and `EXECUTE LIVE`; disarming needs `DISABLE KILL SWITCH`. Admin endpoints accept `x-live-admin-token` or `adminToken` in the JSON body. `POST /api/live/reconcile` summarizes broker/local order drift, and `GET /api/audit/verify` verifies the SHA-256 hash chain in `data/audit.jsonl`.
 
-`LIVE_ADAPTER=disabled` is the default and returns `LIVE_PROVIDER_NOT_WIRED`. To wire a real broker, add `ai/adapters/<name>.mjs` with `placeOrder()` and optional `reconcile()`; it receives a credential provider rather than raw secrets. Suggested live settings: `LIVE_MAX_RISK_PCT`, `LIVE_MIN_REWARD_RISK`, `LIVE_MAX_DAILY_LOSS_PCT`, `LIVE_MAX_OPEN_POSITIONS`, `LIVE_MAX_STALE_SECONDS`, `LIVE_MAX_SPREAD_PCT`, `LIVE_MAX_NOTIONAL`, `LIVE_MIN_EQUITY`, `LIVE_APPROVAL_TTL_SECONDS`, `LIVE_CIRCUIT_FAILURES`, `LIVE_CIRCUIT_COOLDOWN_SECONDS`, and `LIVE_RECONCILE_INTERVAL_SECONDS`. Signed-in users persist live event metadata in `live_events` with per-user RLS; approval tokens are not stored.
+`LIVE_ADAPTER=disabled` is the default and returns `LIVE_PROVIDER_NOT_WIRED`. The bundled `ai/adapters/metaapi-http.mjs` implements `placeOrder()` and `reconcile()` against operator-supplied URLs; set `LIVE_ADAPTER=metaapi-http`, `METAAPI_ORDER_URL`, `METAAPI_RECONCILE_URL`, and the server-side MetaApi token/account. URLs may include `{accountId}`. It receives credentials from the vault, never raw secrets from clients, and returns sanitized scalar-only results. Custom adapters can be added under `ai/adapters/`. Suggested live settings: `LIVE_MAX_RISK_PCT`, `LIVE_MIN_REWARD_RISK`, `LIVE_MAX_DAILY_LOSS_PCT`, `LIVE_MAX_OPEN_POSITIONS`, `LIVE_MAX_STALE_SECONDS`, `LIVE_MAX_SPREAD_PCT`, `LIVE_MAX_NOTIONAL`, `LIVE_MIN_EQUITY`, `LIVE_APPROVAL_TTL_SECONDS`, `LIVE_CIRCUIT_FAILURES`, `LIVE_CIRCUIT_COOLDOWN_SECONDS`, and `LIVE_RECONCILE_INTERVAL_SECONDS`. Signed-in users persist live event metadata in `live_events` with per-user RLS; approval tokens are not stored.
+
+## Production integrations
+
+Copy `.env.example` and set only the providers you actually use:
+
+- **Licensed market data:** `MARKET_DATA_ADAPTER=licensed`, `MARKET_DATA_ENDPOINT`, `MARKET_DATA_API_KEY`, `MARKET_DATA_API_KEY_HEADER`, `MARKET_DATA_AUTH_SCHEME`, `MARKET_DATA_TIMEOUT_MS`. The default `indicative` adapter keeps the free GC=F/DXY proxy and mock fallback.
+- **Summaries:** `SUMMARY_INTERVAL_SECONDS` enables server scheduling (minimum 300 seconds); leave it unset for on-demand summaries only.
+- **Push:** `PUSH_ADMIN_TOKEN`, `EXPO_PUSH_URL`, `EXPO_PUSH_ACCESS_TOKEN`, `PUSH_REQUEST_TIMEOUT_MS`, and mobile `EXPO_PUBLIC_EAS_PROJECT_ID`. Apply `supabase/migrations/202611300001_push_tokens.sql` to store tokens with per-user RLS. Admin push calls accept `x-push-admin-token` or `adminToken` in the body.
+- **Server sessions:** `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SESSION_COOKIE_SECRET`, `SESSION_COOKIE_NAME`, `SESSION_SECURE`, `SESSION_TTL_SECONDS`. Cookies are HttpOnly, `SameSite=Lax`, `Secure` in production, and use the `__Host-` prefix when secure. Session mutations are same-origin only.
+- **Next.js:** install dependencies in `next/`, set `TRADEWALL_UPSTREAM` (default `http://127.0.0.1:8080`), and run `npm run dev` there to proxy `/api/*` to `server.mjs`. The static `web/` MVP remains supported.
+
+No provider keys are sent to browsers or printed by the CLI. `/api/health` reports only configuration status.
 
 ## Testing
 
@@ -120,7 +142,7 @@ The flow is `POST /api/live/proposal` -> `POST /api/live/approve` -> `POST /api/
 npm test
 ```
 
-Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, guarded-live risk/approval/circuit/reconciliation, health/market/news/agent/AI/live/audit endpoints, CLI parsing and guard rails, static serving, path traversal rejection, shared API client, and hash-chained audit logs. The HTTP test starts a local stub market feed, so it does not require internet access.
+Tests use `node:test` with no external dependencies. They cover chart analysis, plan normalization, risk-gate decisions, focus limits, prompt contracts, monitor rules/anomalies, backtests, paper execution/evaluation, broker status, guarded-live risk/approval/circuit/reconciliation, MetaApi/licensed market/push/session/summary adapters, health/market/screener/summary/news/agent/AI/live/notification/session/audit endpoints, CLI parsing and guard rails, static serving, path traversal rejection, shared API client, and hash-chained audit logs. The HTTP tests start local stub market, Expo, and Supabase endpoints, so they do not require internet access.
 
 ## Deployment
 
@@ -134,7 +156,7 @@ The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume fo
 
 ## Mobile app
 
-`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, `/api/broker/status`, and the guarded-live/audit endpoints. The Agent Lab now includes an audit trail viewer with event filters and chain verification. Supabase Auth, preferences, watchlist, chat, paper orders, evaluations, and live event metadata sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
+`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, Agent Lab, and Settings screens; it calls `/api/health`, `/api/market`, `/api/screener`, `/api/summary`, `/api/news`, `/api/ai`, `/api/monitor`, `/api/backtest`, `/api/paper/order`, `/api/paper/evaluate`, `/api/broker/status`, `/api/notifications/*`, `/api/session`, and the guarded-live/audit endpoints. The Agent Lab includes an audit trail viewer with event filters and chain verification. Supabase Auth, preferences, watchlist, chat, paper orders, evaluations, live event metadata, and push tokens sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device; after permission is granted, the app registers an Expo push token and uploads it for server-side delivery.
 
 ```bash
 cd mobile
@@ -143,11 +165,11 @@ cp .env.example .env
 npm start
 ```
 
-Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The Settings screen can override the API base and Supabase publishable key without a rebuild. The mobile app defaults to paper-only; guarded-live controls remain blocked unless the server is configured and the explicit admin/approval flow is completed.
+Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. Set `EXPO_PUBLIC_EAS_PROJECT_ID` to enable remote push token registration. The Settings screen can override the API base and Supabase publishable key without a rebuild. The mobile app defaults to paper-only; guarded-live controls remain blocked unless the server is configured and the explicit admin/approval flow is completed.
 
 ## Market data, alerts, and calendar
 
-`GET /api/market` fetches indicative quotes and daily closes for **XAU/USD** (Yahoo `GC=F` futures proxy) and **DXY** (`DX-Y.NYB`) through a server-side adapter. It caches results for 60 seconds and falls back to the simulated feed if a provider is unavailable. Override with `MARKET_DATA_BASE_URL`, `MARKET_DATA_INTERVAL`, `MARKET_DATA_RANGE`, and `MARKET_DATA_TTL_SECONDS` if you use a compatible chart endpoint or proxy.
+`GET /api/market` fetches indicative quotes and daily closes for **XAU/USD** (Yahoo `GC=F` futures proxy) and **DXY** (`DX-Y.NYB`) through a server-side adapter. It caches results for 60 seconds and falls back to the simulated feed if a provider is unavailable. Override with `MARKET_DATA_BASE_URL`, `MARKET_DATA_INTERVAL`, `MARKET_DATA_RANGE`, and `MARKET_DATA_TTL_SECONDS` if you use a compatible chart endpoint or proxy. Set `MARKET_DATA_ADAPTER=licensed` with an endpoint and server-only key to use a licensed spot feed; `GET /api/screener` exposes rule-based bias/change rows for the same focus symbols.
 
 Price alerts are evaluated in the browser against XAU/USD and DXY. They notify locally and never place orders. When signed in, alerts and their triggered state are stored per user in Supabase; apply `supabase/migrations/202611260001_secure_user_memory.sql` for existing projects (or `supabase/schema.sql` for fresh ones). The economic calendar is curated mock data until a calendar provider is connected.
 
@@ -182,7 +204,8 @@ Build a platform/dashboard for web and Android/iOS that includes:
 - Default mode is paper-only; AI plans require explicit human approval.
 - Agent Lab simulations require `EXECUTE PAPER`; the default live adapter blocks all orders.
 - Guarded live is fail-closed: kill switch, risk gate, HMAC approval, circuit breaker, reconciliation, and audit verification must all pass.
+- Push delivery requires `SEND PUSH` and a server-only admin token; session mutations are same-origin only.
 - Any live adapter must be permissioned and confirm-before-execute; secrets stay server-side.
 
 ## Next Steps
-See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–6 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, the mobile app, guarded live scaffolding, and the agent-native operator layer; a real broker adapter, licensed spot feeds, production auth, and remote push tokens remain integration work.
+See `docs/next-steps.md` and `ROADMAP.md` for current status. Phases 1–6 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, safe agent workflows, the mobile app, guarded live scaffolding, and the agent-native operator layer. Phase 7 adds the MetaApi HTTP adapter, licensed feed mode, screener, summaries, chart templates, Expo push, server sessions, and the Next.js scaffold. Remaining work is provider configuration and validation with real credentials, not missing implementation scaffolding.

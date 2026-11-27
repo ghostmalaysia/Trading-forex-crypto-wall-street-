@@ -77,6 +77,45 @@ test('createApiClient builds health, market, news, and AI requests', async () =>
   }
 });
 
+test('createApiClient builds screener, summary, push, and session requests', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options });
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  const client = createApiClient({ baseUrl: 'https://trade.example', fetchImpl });
+
+  await client.screener();
+  await client.marketSummary();
+  await client.pushStatus();
+  await client.sendPush({ tokens: ['ExpoPushToken[test]'], body: 'Alert' }, { 'x-push-admin-token': 'push-secret' });
+  await client.sessionStatus();
+  await client.sessionSignIn({ email: 'trader@example.com', password: 'secret-password' });
+  await client.sessionSignUp({ email: 'trader@example.com', password: 'secret-password' });
+  await client.sessionRefresh();
+  await client.sessionSignOut();
+  await client.sessionUser();
+
+  assert.deepEqual(calls.map(call => call.url), [
+    'https://trade.example/api/screener',
+    'https://trade.example/api/summary',
+    'https://trade.example/api/notifications/status',
+    'https://trade.example/api/notifications/push',
+    'https://trade.example/api/session',
+    'https://trade.example/api/session/signin',
+    'https://trade.example/api/session/signup',
+    'https://trade.example/api/session/refresh',
+    'https://trade.example/api/session',
+    'https://trade.example/api/session/user',
+  ]);
+  assert.deepEqual(JSON.parse(calls[3].options.body), { tokens: ['ExpoPushToken[test]'], body: 'Alert' });
+  assert.equal(calls[3].options.headers['x-push-admin-token'], 'push-secret');
+  assert.equal(calls[3].options.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[5].options.body), { email: 'trader@example.com', password: 'secret-password' });
+  assert.equal(calls[7].options.method, 'POST');
+  assert.equal(calls[8].options.method, 'DELETE');
+});
+
 test('createApiClient surfaces server error messages', async () => {
   const client = createApiClient({
     baseUrl: 'http://localhost:8080',

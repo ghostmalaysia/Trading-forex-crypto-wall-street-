@@ -12,6 +12,11 @@ function fakeApi() {
     calls,
     health: record('health'),
     market: record('market'),
+    screener: record('screener'),
+    marketSummary: record('marketSummary'),
+    pushStatus: record('pushStatus'),
+    sendPush: record('sendPush'),
+    sessionStatus: record('sessionStatus'),
     news: record('news'),
     monitor: record('monitor'),
     setMonitorRules: record('setMonitorRules'),
@@ -51,7 +56,7 @@ test('parseArgs separates commands and options', () => {
 
 test('CLI exposes read-only commands as machine-readable output', async () => {
   const api = fakeApi();
-  const commands = ['health', 'market', 'watchlist', 'news', 'monitor', 'broker', 'audit verify'];
+  const commands = ['health', 'market', 'watchlist', 'screener', 'summary', 'news', 'monitor', 'broker', 'audit verify', 'push status', 'session status'];
   for (const command of commands) {
     const result = await executeCommand(command, {}, api, readJson);
     assert.equal(result.ok, true);
@@ -62,6 +67,38 @@ test('CLI exposes read-only commands as machine-readable output', async () => {
   assert.deepEqual(api.calls.at(-1), { name: 'auditLogs', args: [{ limit: 20, event: 'paper_order_simulated' }] });
   assert.equal(formatOutput({ ok: true }, {}), '{"ok":true}');
   assert.match(formatOutput({ ok: true }, { pretty: true }), /\n/);
+});
+
+test('CLI sends pushes with exact confirmation and push admin header', async () => {
+  const api = fakeApi();
+  await assert.rejects(
+    () => executeCommand('push send', { tokens: 'ExpoPushToken[test]', body: 'Alert', adminToken: 'push-secret' }, api, readJson),
+    /SEND PUSH/,
+  );
+  await assert.rejects(
+    () => executeCommand('push send', { tokens: 'ExpoPushToken[test]', body: 'Alert', confirm: 'SEND PUSH' }, api, readJson),
+    /admin-token/,
+  );
+  const result = await executeCommand('push send', {
+    tokens: 'ExpoPushToken[one], ExpoPushToken[two]',
+    body: 'XAU/USD alert',
+    title: 'Gold',
+    confirm: 'SEND PUSH',
+    adminToken: 'push-secret',
+  }, api, readJson);
+  assert.equal(result.ok, true);
+  assert.deepEqual(api.calls.at(-1), {
+    name: 'sendPush',
+    args: [
+      {
+        tokens: ['ExpoPushToken[one]', 'ExpoPushToken[two]'],
+        title: 'Gold',
+        body: 'XAU/USD alert',
+        data: {},
+      },
+      { 'x-push-admin-token': 'push-secret' },
+    ],
+  });
 });
 
 test('CLI requires exact confirmations and admin token for writes', async () => {

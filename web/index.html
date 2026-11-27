@@ -24,6 +24,7 @@
         <a href="#alerts"><span class="nav-index">05</span>Alerts</a>
         <a href="#calendar"><span class="nav-index">06</span>Calendar</a>
         <a href="#agent"><span class="nav-index">07</span>Agent Lab</a>
+        <a href="#screener"><span class="nav-index">08</span>Screener</a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -57,6 +58,13 @@
         </form>
         <button id="signOutBtn" type="button" hidden>Sign out</button>
         <button id="configEditBtn" type="button" hidden>Change Supabase settings</button>
+        <div id="serverSession" class="server-session">
+          <small id="serverSessionStatus">Server session: checking…</small>
+          <div class="auth-actions">
+            <button id="serverSignInBtn" type="button">Server sign in</button>
+            <button id="serverSignOutBtn" type="button" hidden>Server sign out</button>
+          </div>
+        </div>
       </section>
     </aside>
 
@@ -108,6 +116,11 @@
               <button type="button" data-indicator="bb">BB</button>
               <button type="button" data-indicator="rsi">RSI</button>
               <button type="button" data-indicator="macd">MACD</button>
+              <span class="tool-sep"></span>
+              <select id="chartTemplateSelect" aria-label="Saved chart template"><option value="">Template…</option></select>
+              <button id="saveChartTemplateBtn" type="button">Save</button>
+              <button id="applyChartTemplateBtn" type="button">Apply</button>
+              <button id="deleteChartTemplateBtn" type="button">Delete</button>
             </div>
           </div>
           <canvas id="priceChart" height="320"></canvas>
@@ -127,6 +140,20 @@
           </div>
         </article>
 
+        <article class="panel" id="screener">
+          <div class="panel-head">
+            <h3>Focus Screener</h3>
+            <span class="badge" id="screenerProvider">--</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Bias</th></tr></thead>
+              <tbody id="screenerBody"></tbody>
+            </table>
+          </div>
+          <p class="disclaimer">Rule-based screen from the same server snapshot. Informational only.</p>
+        </article>
+
         <article class="panel" id="news">
           <div class="panel-head">
             <h3>Market News</h3>
@@ -140,6 +167,8 @@
             <h3>AI Assistant</h3>
             <span class="badge warn">XAU/USD • DXY only</span>
           </div>
+          <div id="marketSummary" class="plan-body"><p class="muted">Tiada ringkasan lagi.</p></div>
+          <button id="summaryBtn" type="button">Generate Market Summary</button>
           <div id="chatLog" class="chat-log"></div>
           <form id="chatForm" class="chat-form">
             <input id="chatInput" type="text" placeholder="Tanya AI: analisis emas/DXY, risiko, atau cadangan..." autocomplete="off" />

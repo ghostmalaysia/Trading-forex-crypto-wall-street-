@@ -19,6 +19,22 @@ import { createApproval, safeEqual, verifyApproval } from './ai/live-approval.mj
 import { LiveCircuitBreaker } from './ai/circuit-breaker.mjs';
 import { loadLiveAdapter, placeLiveOrder, reconcileLiveOrders } from './ai/live-broker.mjs';
 import { summarizeReconciliation } from './ai/reconciliation.mjs';
+import { fetchLicensedMarketTarget, isLicensedAdapter } from './ai/market-adapter.mjs';
+import { buildSummaryInput, summarizeMarket } from './ai/summary.mjs';
+import { pushStatus, sendExpoPush } from './ai/push.mjs';
+import {
+  createSessionPayload,
+  getSessionUser,
+  parseCookieHeader,
+  refreshSession,
+  serializeClearedCookie,
+  serializeSessionCookie,
+  sessionConfig,
+  signInWithPassword,
+  signOutSession,
+  signUpWithPassword,
+  verifySession,
+} from './ai/session.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
@@ -32,6 +48,8 @@ const marketTargets = {
 };
 const marketCache = { payload: null, fetchedAt: 0 };
 const monitorState = { rules: [], events: [], lastRunAt: null, running: false };
+const summaryState = { lastAt: null, last: null, running: false };
+const sessionConfigState = sessionConfig();
 const auditFile = process.env.AUDIT_LOG_FILE || resolve(root, 'data', 'audit.jsonl');
 const livePolicyConfig = livePolicy();
 const liveState = {
@@ -175,6 +193,36 @@ function sendJson(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
+function sendJsonWithCookie(res, status, value, cookie) {
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
+  if (cookie) headers['Set-Cookie'] = cookie;
+  res.writeHead(status, headers);
+  res.end(JSON.stringify(value));
+}
+
+function sameOrigin(req) {
+  const origin = String(req.headers.origin || '');
+  if (!origin) return true;
+  try { return new URL(origin).host === String(req.headers.host || ''); }
+  catch { return false; }
+}
+
+function sessionIdentity(req) {
+  const cookies = parseCookieHeader(req.headers.cookie);
+  const payload = verifySession(cookies[sessionConfigState.cookieName], process.env.SESSION_COOKIE_SECRET);
+  if (!payload || !payload.access_token || Number(payload.exp) * 1000 <= Date.now()) return null;
+  return payload;
+}
+
+function publicSession(payload) {
+  if (!payload) return { authenticated: false, user: null, expiresAt: null };
+  return {
+    authenticated: true,
+    user: { id: payload.user_id || null, email: payload.email || null },
+    expiresAt: payload.expires_at ? new Date(Number(payload.expires_at) * 1000).toISOString() : null,
+  };
+}
+
 function parseQuote(quote) {
   const price = Number(quote.last_done);
   const previousClose = Number(quote.prev_close);
@@ -245,21 +293,52 @@ async function marketSnapshot() {
   const now = Date.now();
   const ttl = Math.max(15, Number(process.env.MARKET_DATA_TTL_SECONDS) || 60) * 1000;
   if (marketCache.payload && now - marketCache.fetchedAt < ttl) return marketCache.payload;
+  const licensed = isLicensedAdapter();
   const entries = await Promise.all(Object.entries(marketTargets).map(async ([symbol, target]) => {
-    try { return await fetchMarketTarget(symbol, target); }
-    catch (error) { return { symbol, error: error.message }; }
+    try {
+      return licensed
+        ? await fetchLicensedMarketTarget(symbol, target)
+        : await fetchMarketTarget(symbol, target);
+    } catch (error) { return { symbol, error: error.message }; }
   }));
   const items = entries.filter(item => !item.error);
   const payload = {
     provider: items.length === Object.keys(marketTargets).length ? 'live' : items.length ? 'partial' : 'mock',
+    adapter: licensed ? 'licensed' : 'indicative',
     fetchedAt: new Date(now).toISOString(),
     items,
     errors: entries.filter(item => item.error),
-    note: 'XAU/USD uses GC=F futures as a proxy; DXY uses DX-Y.NYB. Prices are indicative only.',
+    note: licensed
+      ? 'Prices come from the configured licensed market-data adapter. Confirm provider terms and symbol mapping.'
+      : 'XAU/USD uses GC=F futures as a proxy; DXY uses DX-Y.NYB. Prices are indicative only.',
   };
   marketCache.payload = payload;
   marketCache.fetchedAt = now;
   return payload;
+}
+
+function screenerRows(snapshot) {
+  return (snapshot.items || []).map(item => {
+    const price = Number(item.price);
+    const previousClose = Number(item.previousClose);
+    const series = Array.isArray(item.series) ? item.series.map(Number).filter(Number.isFinite).slice(-20) : [];
+    const average = series.length ? series.reduce((total, value) => total + value, 0) / series.length : null;
+    const changePct = Number.isFinite(price) && Number.isFinite(previousClose) && previousClose > 0
+      ? Number((((price - previousClose) / previousClose) * 100).toFixed(2))
+      : null;
+    const bias = average == null || !Number.isFinite(price)
+      ? 'unavailable'
+      : price > average ? 'above-mean' : price < average ? 'below-mean' : 'at-mean';
+    return {
+      symbol: item.symbol,
+      name: item.label || item.symbol,
+      providerSymbol: item.providerSymbol || null,
+      price: Number.isFinite(price) ? price : null,
+      changePct,
+      bias,
+      observedAt: snapshot.fetchedAt,
+    };
+  });
 }
 
 function monitorSnapshot() {
@@ -289,6 +368,39 @@ async function runMonitorCycle() {
     return monitorSnapshot();
   } finally {
     monitorState.running = false;
+  }
+}
+
+async function runMarketSummary() {
+  if (summaryState.running && summaryState.last) return summaryState.last;
+  summaryState.running = true;
+  try {
+    const [snapshot, knowledge] = await Promise.all([marketSnapshot(), platformKnowledge()]);
+    const auditText = await readFile(auditFile, 'utf8').catch(() => '');
+    const auditEntries = parseAuditLines(auditText).map(row => row.value).filter(Boolean).slice(-10);
+    const input = buildSummaryInput({
+      market: snapshot,
+      monitor: monitorSnapshot(),
+      audit: { entries: auditEntries },
+      alerts: { items: [] },
+    });
+    const summary = await summarizeMarket(input, {
+      complete: messages => complete(messages),
+      knowledge,
+    });
+    const result = {
+      ...summary,
+      marketProvider: snapshot.provider,
+      adapter: snapshot.adapter || 'indicative',
+      fetchedAt: snapshot.fetchedAt,
+      lastRunAt: new Date().toISOString(),
+    };
+    summaryState.last = result;
+    summaryState.lastAt = result.lastRunAt;
+    await appendAudit('market_summary_generated', { provider: result.provider, adapter: result.adapter, aiProvider: result.aiProvider || null });
+    return result;
+  } finally {
+    summaryState.running = false;
   }
 }
 
@@ -378,6 +490,16 @@ function liveAdmin(req, payload = {}) {
   return { ok: true, source: fromHeader ? 'header' : 'body' };
 }
 
+function pushAdmin(req, payload = {}) {
+  const configured = String(process.env.PUSH_ADMIN_TOKEN || '');
+  if (!configured) return { ok: false, status: 503, error: 'PUSH_ADMIN_TOKEN is not configured on the server' };
+  if (!sameOrigin(req)) return { ok: false, status: 403, error: 'Cross-origin push requests are blocked' };
+  const fromHeader = String(req.headers['x-push-admin-token'] || '');
+  const supplied = fromHeader || String(payload.adminToken || '');
+  if (!safeEqual(supplied, configured)) return { ok: false, status: 401, error: 'Push admin token is invalid' };
+  return { ok: true, source: fromHeader ? 'header' : 'body' };
+}
+
 async function liveStatus() {
   const vault = tokenVaultStatus();
   const adapter = await loadLiveAdapter();
@@ -447,6 +569,9 @@ async function handle(req, res) {
       aiProvider: providerName(),
       aiModel: modelName(),
       marketProvider: marketCache.payload?.provider || 'mock',
+      marketAdapter: marketCache.payload?.adapter || (isLicensedAdapter() ? 'licensed' : 'indicative'),
+      push: pushStatus(),
+      session: { configured: sessionConfigState.configured, cookieName: sessionConfigState.cookieName },
     });
   }
   if (url.pathname === '/api/market') {
@@ -454,6 +579,18 @@ async function handle(req, res) {
     const snapshot = await marketSnapshot();
     await appendAudit('market_snapshot', { provider: snapshot.provider, symbols: snapshot.items.map(item => item.symbol) });
     return sendJson(res, 200, snapshot);
+  }
+  if (url.pathname === '/api/screener') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    const snapshot = await marketSnapshot();
+    return sendJson(res, 200, {
+      provider: snapshot.provider,
+      adapter: snapshot.adapter || 'indicative',
+      fetchedAt: snapshot.fetchedAt,
+      rows: screenerRows(snapshot),
+      errors: snapshot.errors,
+      note: 'Rule-based watchlist screen only; not financial advice.',
+    });
   }
   if (url.pathname === '/api/news') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -780,6 +917,103 @@ async function handle(req, res) {
     }
   }
 
+  if (url.pathname === '/api/summary') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, await runMarketSummary());
+  }
+  if (url.pathname === '/api/notifications/status') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, pushStatus());
+  }
+  if (url.pathname === '/api/notifications/push') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const admin = pushAdmin(req, payload);
+    if (!admin.ok) return sendJson(res, admin.status, { error: admin.error });
+    const tokenCount = Array.isArray(payload.tokens) ? payload.tokens.length : payload.tokens ? 1 : 0;
+    const result = await sendExpoPush({
+      tokens: payload.tokens,
+      title: payload.title,
+      body: payload.body,
+      data: payload.data,
+      sound: payload.sound,
+    });
+    await appendAudit('push_sent', { tokenCount, sent: result.sent, errors: result.errors.length, adminSource: admin.source });
+    return sendJson(res, 200, result);
+  }
+  if (url.pathname === '/api/session') {
+    if (req.method === 'GET') {
+      return sendJson(res, 200, {
+        configured: sessionConfigState.configured,
+        cookieName: sessionConfigState.cookieName,
+        ...publicSession(sessionIdentity(req)),
+      });
+    }
+    if (req.method !== 'DELETE') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!sessionConfigState.configured) return sendJson(res, 503, { error: 'Server auth is not configured' });
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin session requests are blocked' });
+    const identity = sessionIdentity(req);
+    if (identity?.access_token) await signOutSession({ accessToken: identity.access_token }).catch(() => {});
+    await appendAudit('session_signout', { userId: identity?.user_id || null });
+    return sendJsonWithCookie(res, 200, { ok: true }, serializeClearedCookie());
+  }
+  if (url.pathname === '/api/session/signin') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!sessionConfigState.configured) return sendJson(res, 503, { error: 'Server auth is not configured' });
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin session requests are blocked' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const result = await signInWithPassword({ email: payload.email, password: payload.password });
+    if (!result.ok || !result.data?.access_token) {
+      return sendJson(res, result.status, { error: result.data?.message || 'sign_in_failed' });
+    }
+    const identity = createSessionPayload(result.data);
+    await appendAudit('session_signin', { userId: identity.user_id || null });
+    return sendJsonWithCookie(res, 200, { ok: true, ...publicSession(identity) }, serializeSessionCookie(identity));
+  }
+  if (url.pathname === '/api/session/signup') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!sessionConfigState.configured) return sendJson(res, 503, { error: 'Server auth is not configured' });
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin session requests are blocked' });
+    let payload;
+    try { payload = await readJsonBody(req); }
+    catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const result = await signUpWithPassword({ email: payload.email, password: payload.password });
+    if (!result.ok) return sendJson(res, result.status, { error: result.data?.message || 'sign_up_failed' });
+    if (!result.data?.access_token) {
+      await appendAudit('session_signup', { authenticated: false });
+      return sendJson(res, 200, { ok: true, needsConfirmation: true, message: 'check_email' });
+    }
+    const identity = createSessionPayload(result.data);
+    await appendAudit('session_signup', { userId: identity.user_id || null, authenticated: true });
+    return sendJsonWithCookie(res, 200, { ok: true, ...publicSession(identity) }, serializeSessionCookie(identity));
+  }
+  if (url.pathname === '/api/session/refresh') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+    if (!sessionConfigState.configured) return sendJson(res, 503, { error: 'Server auth is not configured' });
+    if (!sameOrigin(req)) return sendJson(res, 403, { error: 'Cross-origin session requests are blocked' });
+    const identity = sessionIdentity(req);
+    if (!identity?.refresh_token) return sendJson(res, 401, { error: 'No active session' });
+    const result = await refreshSession({ refresh_token: identity.refresh_token });
+    if (!result.ok || !result.data?.access_token) {
+      return sendJsonWithCookie(res, 401, { error: 'session_expired' }, serializeClearedCookie());
+    }
+    const refreshed = createSessionPayload(result.data);
+    await appendAudit('session_refreshed', { userId: refreshed.user_id || null });
+    return sendJsonWithCookie(res, 200, { ok: true, ...publicSession(refreshed) }, serializeSessionCookie(refreshed));
+  }
+  if (url.pathname === '/api/session/user') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    const identity = sessionIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: 'No active session' });
+    const result = await getSessionUser({ accessToken: identity.access_token });
+    if (!result.ok) return sendJson(res, result.status, { error: result.data?.message || 'session_invalid' });
+    return sendJson(res, 200, { user: result.data?.user || null });
+  }
+
   const requested = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
   const file = resolve(webRoot, `.${requested}`);
   if (!file.startsWith(`${webRoot}${sep}`)) return sendJson(res, 403, { error: 'Forbidden' });
@@ -805,6 +1039,14 @@ if (livePolicyConfig.liveTradingEnabled && process.env.LIVE_RECONCILE_INTERVAL_S
     runReconciliation().catch(() => {});
   }, livePolicyConfig.reconcileIntervalSeconds * 1000);
   reconciliationInterval.unref();
+}
+
+if (process.env.SUMMARY_INTERVAL_SECONDS) {
+  const summaryIntervalSeconds = Math.max(300, Number(process.env.SUMMARY_INTERVAL_SECONDS) || 1800);
+  const summaryInterval = setInterval(() => {
+    runMarketSummary().catch(() => {});
+  }, summaryIntervalSeconds * 1000);
+  summaryInterval.unref();
 }
 
 startLongbridge();

@@ -5,7 +5,7 @@ import { createApiClient } from '../shared/api-client.js';
 import { FOCUS } from '../shared/feed-data.js';
 import { createMobileSupabaseClient } from './supabase-client.js';
 import { readJson, removeJson, writeJson } from './storage.js';
-import { ensureNotificationPermission, notifyAlert } from './notifications.js';
+import { ensureNotificationPermission, getExpoPushToken, notifyAlert } from './notifications.js';
 import { fmt } from './format.js';
 import DashboardScreen from './screens/DashboardScreen.js';
 import WatchlistScreen from './screens/WatchlistScreen.js';
@@ -20,6 +20,7 @@ const selectedKey = 'tradewall_mobile_selected';
 const messagesKey = 'tradewall_mobile_chat';
 const alertsKey = 'tradewall_mobile_alert_rules';
 const firedKey = 'tradewall_mobile_fired_alerts';
+const pushTokenKey = 'tradewall_mobile_push_token';
 
 const tabs = [
   { key: 'dashboard', label: 'DASH' },
@@ -46,6 +47,7 @@ export default function App() {
   const [market, setMarket] = useState(null);
   const [feed, setFeed] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [marketSummary, setMarketSummary] = useState(null);
   const [agentMonitor, setAgentMonitor] = useState(null);
   const [broker, setBroker] = useState(null);
   const [agentBacktest, setAgentBacktest] = useState(null);
@@ -228,6 +230,10 @@ export default function App() {
     askAi('plan', 'Bina cadangan paper trading untuk simbol ini.');
   }, [askAi]);
 
+  const handleMarketSummary = useCallback(() => run(async () => {
+    setMarketSummary(await apiClient.marketSummary());
+  }), [apiClient, run]);
+
   const handleRunMonitor = useCallback(() => run(async () => {
     setAgentMonitor(await apiClient.runMonitor());
   }), [apiClient, run]);
@@ -379,6 +385,8 @@ export default function App() {
   const handleSignIn = useCallback((email, password) => run(async () => {
     await cloud.signIn(email, password);
     syncCloudState();
+    const pushToken = await readJson(pushTokenKey, null);
+    if (pushToken) cloud.savePushToken(pushToken).catch(() => {});
     const [settings, list, chat] = await Promise.all([
       cloud.loadSettings(),
       cloud.loadWatchlist(),
@@ -411,7 +419,11 @@ export default function App() {
     const granted = await ensureNotificationPermission();
     setNotificationReady(granted);
     if (!granted) throw new Error('Notification permission was denied.');
-  }), [run]);
+    const token = await getExpoPushToken();
+    if (!token) return;
+    await writeJson(pushTokenKey, token);
+    if (cloudState.signedIn) await cloud.savePushToken(token);
+  }), [cloud, cloudState.signedIn, run]);
 
   const handleSaveAlert = useCallback(() => run(async () => {
     const symbol = String(alertRule.symbol || '').trim().toUpperCase();
@@ -470,6 +482,8 @@ export default function App() {
         onAsk={askAi}
         onPlan={handlePlan}
         plan={plan}
+        summary={marketSummary}
+        onSummary={handleMarketSummary}
         onClear={() => setMessages([])}
       />
     );

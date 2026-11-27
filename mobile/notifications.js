@@ -17,6 +17,15 @@ export async function ensureNotificationPermission() {
   return !!request.granted;
 }
 
+export async function getExpoPushToken() {
+  const granted = await ensureNotificationPermission();
+  if (!granted) return null;
+  const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
+  if (!projectId) return null;
+  const token = await Notifications.getExpoPushTokenAsync({ projectId });
+  return token?.data ? String(token.data) : null;
+}
+
 export async function notifyAlert(title, body) {
   const granted = await ensureNotificationPermission();
   if (!granted) return false;
