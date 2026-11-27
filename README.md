@@ -8,7 +8,8 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - `web/` - runnable static MVP dashboard (no build required)
 - `mobile/` - Expo app scaffold consuming the same Node APIs
 - `supabase/` - cloud memory schema (profiles, watchlists, AI memory, alerts, AI learning, trade plans, audit logs)
-- `tests/` - automated AI and HTTP endpoint tests
+- `tests/` - automated AI, HTTP, shared client, and mobile cloud client tests
+- `shared/` - API client and curated feed data shared by server and mobile
 - `docs/` - product notes, references, and integration plan
 - `Dockerfile` / `docker-compose.yml` - container deployment config
 
@@ -27,6 +28,7 @@ Free-first web + mobile trading intelligence dashboard with AI-assisted monitori
 - Append-only audit logs for AI requests, plan decisions, feedback, and alerts
 - Automated `node:test` coverage for AI logic and HTTP endpoints
 - Responsive layout for desktop/mobile web
+- Expo mobile app with shared API client, five core screens, Supabase sync, and local alert notifications
 - Working in-page navigation and keyboard-accessible watchlist selection
 - Mock price changes stay anchored to a reference price, avoiding cumulative percentage drift
 - Optional Longbridge live quotes for US stocks through a local, read-only Node.js bridge
@@ -86,7 +88,7 @@ The container binds `HOST=0.0.0.0` on port `8080`, mounts a persistent volume fo
 
 ## Mobile app
 
-`mobile/` contains an Expo scaffold that calls the same `/api/health`, `/api/market`, and `/api/ai` endpoints.
+`mobile/` is an Expo React Native app using the shared `shared/api-client.js` module. It has Dashboard, Watchlist, News, AI Desk, and Settings screens; it calls `/api/health`, `/api/market`, `/api/news`, and `/api/ai`. Supabase Auth, preferences, watchlist, and chat sync through `mobile/supabase-client.js`, stored locally with AsyncStorage. Alert rules are evaluated on-device and use Expo local notifications after permission is granted.
 
 ```bash
 cd mobile
@@ -95,7 +97,7 @@ cp .env.example .env
 npm start
 ```
 
-Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The mobile app is paper-only and does not place orders.
+Set `EXPO_PUBLIC_API_BASE_URL` to a reachable server URL: Android emulator uses `http://10.0.2.2:8080`, iOS simulator uses `http://localhost:8080`, and a physical device needs your LAN address or deployed HTTPS URL. The Settings screen can override the API base and Supabase publishable key without a rebuild. The mobile app is paper-only and does not place orders.
 
 ## Market data, alerts, and calendar
 
@@ -135,4 +137,4 @@ Build a platform/dashboard for web and Android/iOS that includes:
 - Any future automation must be permissioned and confirm-before-execute.
 
 ## Next Steps
-See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–2 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, and the Expo scaffold; broker automation remains out of scope for the MVP.
+See `docs/next-steps.md` and `ROADMAP.md` for the remaining work. Phases 1–3 cover live indicative data, alerts, chart tools, AI plans, audit logs, tests, deployment config, and the mobile app; broker automation and remote push tokens remain out of scope for the MVP.

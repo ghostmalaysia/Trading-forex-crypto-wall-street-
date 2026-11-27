@@ -83,6 +83,12 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(market.provider, 'live');
     assert.deepEqual(market.items.map(item => item.symbol), ['XAU/USD', 'DXY']);
 
+    const news = await (await fetch(`${base}/api/news`)).json();
+    assert.equal(news.provider, 'curated-mock');
+    assert.deepEqual(news.focus, ['XAU/USD', 'DXY']);
+    assert.ok(news.items.length > 0);
+    assert.ok(news.calendar.length > 0);
+
     const context = {
       selected: 'XAU/USD',
       market: 'Gold',

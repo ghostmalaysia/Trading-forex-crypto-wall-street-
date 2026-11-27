@@ -36,21 +36,28 @@ To enable a live AI model, set `GROQ_API_KEY` on the server. Leave it unset for 
 ## 6. Current audit and tests (done)
 - Browser writes per-user `audit_logs` rows for AI plan generation, approve/reject, feedback, and alert create/trigger when signed in.
 - Server appends operational events to `data/audit.jsonl` (override with `AUDIT_LOG_FILE`); client IP is hashed and model messages are not logged.
-- `npm test` runs `node:test` coverage for AI logic, risk gate, focus limits, prompt contracts, HTTP endpoints, static serving, path traversal rejection, and audit-log creation.
+- `npm test` runs `node:test` coverage for AI logic, risk gate, focus limits, prompt contracts, HTTP endpoints, static serving, path traversal rejection, audit-log creation, shared API client, and mobile Supabase REST client.
 
-## 7. Current deployment and mobile scaffold (done)
+## 7. Current deployment (done)
 - `Dockerfile` + `docker-compose.yml` bind `HOST=0.0.0.0:8080`, persist audit logs, expose a health check, and read server secrets from `.env`.
-- `mobile/` is an Expo scaffold using `EXPO_PUBLIC_API_BASE_URL` to call the same health, market, and AI endpoints.
-- Docker and Expo were not executed in this environment; install deps and run locally before publishing.
+- Docker was not executed in this environment; install Docker and run `docker compose up --build` before publishing.
 
-## 8. Recommended next implementation
+## 8. Current mobile app (done)
+- `shared/api-client.js` is used by the Expo app for `/api/health`, `/api/market`, `/api/news`, and `/api/ai`; `shared/feed-data.js` supplies curated news and calendar fallbacks.
+- Mobile screens: Dashboard, Watchlist, News, AI Desk, and Settings. Settings can override API base URL and Supabase publishable key without a rebuild.
+- `mobile/supabase-client.js` stores config/session with AsyncStorage and syncs preferences, watchlist, and chat with RLS-protected Supabase tables. Never enter a `service_role` key.
+- Alert rules for XAU/USD and DXY are evaluated locally and use Expo local notifications after permission. Remote push tokens and background delivery are not yet wired.
+- Expo was not executed in this environment; run `cd mobile && npm install && cp .env.example .env && npm start` to verify on a device or simulator.
+
+## 9. Recommended next implementation
 - Add a screener, saved drawing templates, and a real economic calendar provider.
 - Replace the GC=F proxy with a licensed spot XAU/USD feed and a real DXY feed.
+- Wire Expo push tokens and a server-side notification scheduler for background alerts.
 - Migrate to **Next.js + TypeScript + Tailwind** for production structure.
 - Replace the lightweight browser Auth client with the official Supabase client or a server-side HttpOnly session before production.
-- Add an in-app audit viewer and mobile Supabase Auth if multi-device history is required.
+- Add an in-app audit viewer.
 
-## 9. Safety checklist
+## 10. Safety checklist
 - Keep AI output informational only.
 - No auto-trading; AI plans stay paper-only and require explicit confirmation.
 - Keep API keys in environment variables on the server.

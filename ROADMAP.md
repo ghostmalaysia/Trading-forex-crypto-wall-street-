@@ -53,13 +53,13 @@ Build a free-first web + Android/iOS trading platform/dashboard for **Forex, Cry
 **Outcome:** AI helps monitor and explain, with persistent cloud memory and user control.
 
 ## Phase 3 - Mobile Apps
-- [ ] Expo React Native app scaffold
-- [ ] Shared types/API client package
-- [ ] Core screens: dashboard, watchlist, news, AI chat
-- [ ] Push notifications for alerts
-- [ ] Supabase Auth and settings sync across web/mobile
+- [x] Expo React Native app scaffold
+- [x] Shared API client package (`shared/api-client.js`)
+- [x] Core screens: dashboard, watchlist, news, AI chat, settings
+- [x] Local alert notifications (Expo Notifications; remote push tokens not yet wired)
+- [x] Supabase Auth and settings/watchlist/chat sync across web/mobile
 
-**Outcome:** Android/iOS companion app with shared cloud memory.
+**Outcome:** Android/iOS companion app with shared cloud memory. Run `cd mobile && npm install && cp .env.example .env && npm start`; set `EXPO_PUBLIC_API_BASE_URL` to a reachable TradeWall server.
 
 ## Phase 4 - AI Agent Workflows (Safe)
 - [ ] Background monitoring jobs (price/news/anomaly alerts)

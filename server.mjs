@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { platformKnowledge, systemPrompt, planSystemPrompt } from './ai/prompt.mjs';
 import { complete, providerName, modelName } from './ai/provider.mjs';
 import { analyzeChart, normalizePlan, riskGate } from './ai/plan.mjs';
+import { CALENDAR, FOCUS, NEWS } from './shared/feed-data.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const webRoot = resolve(root, 'web');
@@ -239,6 +240,10 @@ async function handle(req, res) {
     const snapshot = await marketSnapshot();
     await appendAudit('market_snapshot', { provider: snapshot.provider, symbols: snapshot.items.map(item => item.symbol) });
     return sendJson(res, 200, snapshot);
+  }
+  if (url.pathname === '/api/news') {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, { items: NEWS, calendar: CALENDAR, focus: FOCUS, provider: 'curated-mock', fetchedAt: new Date().toISOString() });
   }
   if (url.pathname === '/api/ai') {
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
