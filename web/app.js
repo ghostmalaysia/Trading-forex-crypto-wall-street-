@@ -1,4 +1,5 @@
 import { detectCandlePatterns, explainCandlePatterns, toCandles } from '/shared/candle-patterns.js';
+import { currentLang, currentTheme, initSettings, onLangChange, tr } from './settings.js';
 
 const MARKET = [
   { symbol: 'EUR/USD', market: 'Forex', price: 1.0842, change: 0.42, history: seed(1.0842, 0.0008) },
@@ -35,7 +36,7 @@ const state = {
   selected: 'XAU/USD', timeframe: '1D', userKey: null, memoryReady: false, provider: 'mock', providerDetail: '',
   configEditing: false, lessons: [], history: [], currentPlan: null, planDecision: null, aiProvider: 'local', aiModel: 'rules', marketProvider: 'mock', alerts: [],
   monitor: null, broker: null, backtest: null, paperOrders: [], screener: null, summary: null,
-  paperAccount: null, learning: null, research: null, decisions: [], candle: null, news: null, scoutLastKey: '', scoutHideTimer: null,
+  paperAccount: null, learning: null, research: null, decisions: [], candle: null, news: null, scoutLastKey: '', scoutHideTimer: null, scoutMoodIndex: 0, scoutMoodTimer: null,
   liveStatus: null, liveProposal: null, liveApproval: null, liveResult: null, liveEvents: [], auditVerify: null, auditLogs: null,
   chartType: 'candle', drawTool: 'cursor', indicators: { ma20: true, ma50: true, bb: false, rsi: false, macd: false },
   viewCount: null, viewOffset: 0, crosshair: null, drawings: [], pendingTrend: null, panStart: null, chartScale: null,
@@ -68,26 +69,26 @@ function renderStats() {
   const gainers = MARKET.filter(m => m.change > 0).length;
   const avg = MARKET.reduce((a, m) => a + m.change, 0) / MARKET.length;
   const cards = [
-    { label: 'Selected Asset', value: c.symbol, delta: `${c.market} • ${fmtPrice(c.price)}`, cls: '' },
-    { label: '24h Change', value: fmtChange(c.change), delta: c.change >= 0 ? 'Up vs previous close' : 'Down vs previous close', cls: c.change >= 0 ? 'up' : 'down' },
-    { label: 'Market Breadth', value: `${gainers}/${MARKET.length}`, delta: 'Assets in positive territory', cls: 'up' },
-    { label: 'Avg. Move', value: fmtChange(avg), delta: 'Across tracked watchlist', cls: avg >= 0 ? 'up' : 'down' },
+    { label: tr('label.selected'), value: c.symbol, delta: `${c.market} • ${fmtPrice(c.price)}`, cls: '' },
+    { label: tr('label.change24h'), value: fmtChange(c.change), delta: tr(c.change >= 0 ? 'text.upClose' : 'text.downClose'), cls: c.change >= 0 ? 'up' : 'down' },
+    { label: tr('label.breadth'), value: `${gainers}/${MARKET.length}`, delta: tr('text.positiveAssets'), cls: 'up' },
+    { label: tr('label.avgMove'), value: fmtChange(avg), delta: tr('text.watchlistMove'), cls: avg >= 0 ? 'up' : 'down' },
   ];
   $('stats').innerHTML = cards.map(c => `<div class="stat"><div class="label">${c.label}</div><div class="value ${c.cls}">${c.value}</div><div class="delta ${c.cls}">${c.delta}</div></div>`).join('');
   const feedLive = state.provider === 'longbridge' || state.marketProvider === 'live' || state.marketProvider === 'partial';
   const feedLabel = state.provider === 'longbridge'
-    ? 'Live quotes • Longbridge'
+    ? tr('text.feedLongbridge')
     : state.marketProvider === 'live'
-      ? 'Live quotes • XAU/USD + DXY feed'
+      ? tr('text.feedLive')
       : state.marketProvider === 'partial'
-        ? 'Partial live feed • some symbols simulated'
-        : `Mock data${state.providerDetail ? ` • ${state.providerDetail}` : ' • no live provider connected'}`;
+        ? tr('text.feedPartial')
+        : `${tr('text.feedMock')}${state.providerDetail ? ` • ${state.providerDetail}` : tr('text.feedMockDetail')}`;
   const status = document.querySelector('.sidebar-card small');
   if (status) status.textContent = feedLabel;
   const dot = document.querySelector('.sidebar-card .dot');
   if (dot) dot.classList.toggle('offline', !feedLive);
   const barProvider = $('statusProvider');
-  if (barProvider) barProvider.textContent = feedLive ? (state.provider === 'longbridge' ? 'LIVE LONGBRIDGE' : `LIVE ${state.marketProvider.toUpperCase()}`) : 'SIMULATED';
+  if (barProvider) barProvider.textContent = feedLive ? (state.provider === 'longbridge' ? 'LIVE LONGBRIDGE' : `LIVE ${state.marketProvider.toUpperCase()}`) : tr('status.simulated');
   const barDot = $('statusDot');
   if (barDot) barDot.classList.toggle('offline', !feedLive);
 }
@@ -100,7 +101,7 @@ function renderTicker() {
 
 function renderWatchlist() {
   $('watchlistBody').innerHTML = MARKET.map(m => `
-    <tr class="${m.symbol === state.selected ? 'active' : ''}" data-symbol="${m.symbol}" tabindex="0" aria-label="Show ${m.symbol} chart">
+    <tr class="${m.symbol === state.selected ? 'active' : ''}" data-symbol="${m.symbol}" tabindex="0" aria-label="${tr('text.showChart')} ${m.symbol}">
       <td>${m.symbol}</td>
       <td>${fmtPrice(m.price)}</td>
       <td class="${m.change >= 0 ? 'up' : 'down'}">${fmtChange(m.change)}</td>
@@ -131,14 +132,14 @@ function renderScreener() {
       <td>${fmtPrice(Number(row.price) || 0)}</td>
       <td class="${Number(row.changePct) >= 0 ? 'up' : 'down'}">${fmtChange(Number(row.changePct) || 0)}</td>
       <td><span class="market-tag">${escapeHtml(row.bias || 'unavailable')}</span></td>
-    </tr>`).join('') : '<tr><td colspan="4" class="muted">Screener unavailable; using local watchlist.</td></tr>';
+    </tr>`).join('') : `<tr><td colspan="4" class="muted">${tr('text.screenerUnavailable')}</td></tr>`;
 }
 
 function renderMarketSummary() {
   const summary = state.summary;
   const node = $('marketSummary');
   if (!node) return;
-  if (!summary) { node.innerHTML = '<p class="muted">Tiada ringkasan lagi.</p>'; return; }
+  if (!summary) { node.innerHTML = `<p class="muted">${tr('text.noSummary')}</p>`; return; }
   const bullets = Array.isArray(summary.bullets) ? summary.bullets : [];
   node.innerHTML = `<div class="risk-list">${bullets.map(bullet => `<div class="risk-item"><span>${escapeHtml(bullet)}</span></div>`).join('')}</div>${summary.aiSummary ? `<p class="disclaimer">${escapeHtml(summary.aiSummary)}</p>` : ''}`;
 }
@@ -161,10 +162,10 @@ async function loadNews() {
     if (!response.ok) throw new Error(payload.error || 'News feed unavailable');
     state.news = payload;
     $('newsProvider').textContent = payload.provider === 'curated-mock'
-      ? 'Curated mock headlines'
+      ? tr('text.newsMock')
       : payload.provider === 'curated-fallback'
-        ? 'Curated fallback • feed unavailable'
-        : `Live ${payload.provider} feed`;
+        ? tr('text.newsFallback')
+        : `${tr('text.newsLive')} • ${payload.provider}`;
     renderNews();
   } catch {
     state.news = null;
@@ -365,7 +366,7 @@ function refreshTemplateOptions(selected = '') {
   const select = $('chartTemplateSelect');
   if (!select) return;
   const names = Object.keys(state.chartTemplates).sort();
-  select.innerHTML = `<option value="">Template…</option>${names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
+  select.innerHTML = `<option value="">${tr('chart.templateOption')}</option>${names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}`;
   if (selected && state.chartTemplates[selected]) select.value = selected;
 }
 
@@ -635,17 +636,17 @@ function drawChart() {
   const last = data[data.length - 1];
   ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(x(data.length - 1), y(last), 3.5, 0, Math.PI * 2); ctx.fill();
 
-  $('chartTitle').textContent = `${c.symbol} ${state.chartType === 'candle' ? 'Candlestick' : 'Price'} Chart (${state.timeframe})`;
+  $('chartTitle').textContent = `${c.symbol} ${tr(state.chartType === 'candle' ? 'chart.candlestick' : 'chart.price')} ${tr('panel.chart')} (${state.timeframe})`;
   const badge = $('chartChange');
   badge.textContent = fmtChange(c.change);
   badge.style.color = c.change >= 0 ? '#9ff0bf' : '#ffb3b3';
   badge.style.background = c.change >= 0 ? 'rgba(46,204,113,.12)' : 'rgba(255,107,107,.12)';
   badge.style.borderColor = c.change >= 0 ? 'rgba(46,204,113,.25)' : 'rgba(255,107,107,.25)';
   const isLive = c.dataSource === 'longbridge' || c.dataSource === 'market';
-  const source = c.dataSource === 'longbridge' ? 'Longbridge live quote' : c.dataSource === 'market' ? `Live feed • ${c.providerSymbol || c.symbol}` : 'Simulated data';
+  const source = c.dataSource === 'longbridge' ? tr('text.feedLongbridge') : c.dataSource === 'market' ? `${tr('text.newsLive')} • ${c.providerSymbol || c.symbol}` : tr('text.feedMock');
   const sourceEl = $('chartSource');
   if (sourceEl) { sourceEl.textContent = isLive ? 'LIVE' : 'SIM'; sourceEl.classList.toggle('live', isLive); }
-  $('chartMeta').innerHTML = `<span>Last: <strong>${fmtPrice(c.price)}</strong></span><span>High: ${fmtPrice(rawHigh)}</span><span>Low: ${fmtPrice(rawLow)}</span><span>Bars: ${count}</span><span>Source: ${source}</span>`;
+  $('chartMeta').innerHTML = `<span>${tr('label.last')}: <strong>${fmtPrice(c.price)}</strong></span><span>${tr('label.high')}: ${fmtPrice(rawHigh)}</span><span>${tr('label.low')}: ${fmtPrice(rawLow)}</span><span>${tr('label.bars')}: ${count}</span><span>${tr('label.source')}: ${source}</span>`;
 }
 
 function bindChartTools() {
@@ -765,6 +766,7 @@ function buildAIContext() {
   return {
     selected: c.symbol,
     market: c.market,
+    language: currentLang(),
     timeframe: state.timeframe,
     price: c.price,
     change: c.change,
@@ -873,8 +875,8 @@ function drawPnl(points = loadEquityCurve()) {
   ctx.fill();
   ctx.fillStyle = '#4a5f7d';
   ctx.font = '9px monospace';
-  ctx.fillText('MULA', pad.l, cssH - 6);
-  ctx.fillText('SEKARANG', cssW - pad.r - 46, cssH - 6);
+  ctx.fillText(tr('chart.start'), pad.l, cssH - 6);
+  ctx.fillText(tr('chart.now'), cssW - pad.r - 46, cssH - 6);
 }
 
 function renderPnlStats(account, points) {
@@ -886,10 +888,10 @@ function renderPnlStats(account, points) {
   const pct = baseline ? (total / baseline) * 100 : 0;
   const cls = total >= 0 ? 'up' : 'down';
   stats.innerHTML = `
-    <div class="plan-cell"><span>Equity</span><strong>$${equity.toFixed(2)}</strong></div>
-    <div class="plan-cell"><span>P&L keseluruhan</span><strong class="${cls}">${total >= 0 ? '+' : ''}$${total.toFixed(2)}</strong></div>
-    <div class="plan-cell"><span>P&L harian</span><strong class="${Number(account?.dailyPnl) >= 0 ? 'up' : 'down'}">${Number(account?.dailyPnl) >= 0 ? '+' : ''}$${Number(account?.dailyPnl || 0).toFixed(2)}</strong></div>
-    <div class="plan-cell"><span>Realized</span><strong class="${Number(account?.realizedPnl) >= 0 ? 'up' : 'down'}">${Number(account?.realizedPnl) >= 0 ? '+' : ''}$${Number(account?.realizedPnl || 0).toFixed(2)}</strong></div>`;
+    <div class="plan-cell"><span>${tr('label.equity')}</span><strong>$${equity.toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>${tr('label.totalPnl')}</span><strong class="${cls}">${total >= 0 ? '+' : ''}$${total.toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>${tr('label.dailyPnl')}</span><strong class="${Number(account?.dailyPnl) >= 0 ? 'up' : 'down'}">${Number(account?.dailyPnl) >= 0 ? '+' : ''}$${Number(account?.dailyPnl || 0).toFixed(2)}</strong></div>
+    <div class="plan-cell"><span>${tr('label.realized')}</span><strong class="${Number(account?.realizedPnl) >= 0 ? 'up' : 'down'}">${Number(account?.realizedPnl) >= 0 ? '+' : ''}$${Number(account?.realizedPnl || 0).toFixed(2)}</strong></div>`;
   const badge = $('pnlBadge');
   if (badge !== inertNode) {
     badge.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
@@ -904,7 +906,7 @@ function renderPaperState() {
   drawPnl(points);
   renderPnlStats(account, points);
   if (capital && account) {
-    capital.textContent = `Paper $${Number(account.equity).toFixed(2)} / $${Number(account.startingCapital).toFixed(2)} • risk ${account.maxRiskPct}% • daily ${account.maxDailyLossPct}%`;
+    capital.textContent = `${tr('status.paper')} $${Number(account.equity).toFixed(2)} / $${Number(account.startingCapital).toFixed(2)} • ${tr('label.risk')} ${account.maxRiskPct}% • ${tr('label.daily')} ${account.maxDailyLossPct}%`;
     capital.classList.toggle('warn', !!account.blocked);
   }
   const learning = $('paperLearning');
@@ -914,7 +916,7 @@ function renderPaperState() {
     : [];
   learning.innerHTML = lessons.length
     ? `<div class="risk-list">${lessons.map(item => `<div class="risk-item"><span>${escapeHtml(item)}</span></div>`).join('')}</div>`
-    : '<p class="muted">Pembelajaran paper belum tersedia. Evaluate order paper untuk mula melatih sistem.</p>';
+    : `<p class="muted">${tr('text.noLearningDetail')}</p>`;
 }
 
 async function loadPaperState() {
@@ -934,7 +936,7 @@ async function loadPaperState() {
 async function runResearch() {
   const button = $('researchBtn');
   if (button) button.disabled = true;
-  $('researchBody').innerHTML = '<p class="muted">AI sedang menyusun laporan terperinci...</p>';
+  $('researchBody').innerHTML = `<p class="muted">${tr('text.researchLoading')}</p>`;
   try {
     const data = await askAI('Hasilkan analisis mendalam untuk simbol ini.', 'research');
     state.research = data;
@@ -953,12 +955,12 @@ function addDecision(role, content) {
   if (!log) return;
   if (!log.dataset.loaded) {
     log.dataset.loaded = 'true';
-    log.innerHTML = '<p class="muted">AI akan menjelaskan sebab cadangan BUY/SELL/NO TRADE berdasarkan graf, risk gate, dan pembelajaran paper.</p>';
+    log.innerHTML = `<p class="muted">${tr('text.decisionWaiting')}</p>`;
   }
   const row = document.createElement('div');
   row.className = `chat-msg ${role}`;
   const label = document.createElement('strong');
-  label.textContent = role === 'user' ? 'YOU' : 'AI DECISION';
+  label.textContent = tr(role === 'user' ? 'label.you' : 'label.aiDecision');
   const body = document.createElement('span');
   body.textContent = content;
   row.append(label, body);
@@ -983,7 +985,7 @@ async function runDecision(text) {
     audit('ai_decision_explained', 'decision', { symbol: state.selected, action: data.decision?.action || null });
     return data;
   } catch (error) {
-    addDecision('ai', `Gagal menjana penjelasan: ${error.message}`);
+    addDecision('ai', `${tr('text.decisionFailed')} ${error.message}`);
     return null;
   } finally {
     if (button) button.disabled = false;
@@ -998,8 +1000,8 @@ function renderCandle() {
   const body = $('candleBody');
   if (body !== inertNode) {
     body.innerHTML = `
-      <p class="muted">Isyarat: <strong>${escapeHtml(action)}</strong> · keyakinan ${escapeHtml(signal.confidence || 'low')} · ${escapeHtml(state.candle.summary || '')}</p>
-      <div class="risk-list">${patterns || '<div class="risk-item"><span>Tiada corak klasik yang jelas.</span></div>'}</div>
+      <p class="muted">${escapeHtml(tr('candle.signal'))}: <strong>${escapeHtml(action)}</strong> · ${escapeHtml(tr('candle.confidence'))} ${escapeHtml(signal.confidence || 'low')} · ${escapeHtml(state.candle.summary || '')}</p>
+      <div class="risk-list">${patterns || `<div class="risk-item"><span>${escapeHtml(tr('text.noPattern'))}</span></div>`}</div>
       <p>${escapeHtml(state.candle.reply || '')}</p>`;
   }
   const badge = $('signalBadge');
@@ -1012,25 +1014,50 @@ function renderCandle() {
   const confidence = $('signalConfidence');
   if (confidence !== inertNode) confidence.textContent = String(signal.confidence || 'low').toUpperCase();
   const evidence = $('signalEvidence');
-  if (evidence !== inertNode) evidence.textContent = signal.label || state.candle.summary || 'Tiada corak jelas.';
+  if (evidence !== inertNode) evidence.textContent = signal.label || state.candle.summary || tr('candle.none');
   const reason = $('signalReason');
-  if (reason !== inertNode) reason.textContent = signal.reason || 'Tunggu pengesahan struktur sebelum sebarang tindakan.';
+  if (reason !== inertNode) reason.textContent = signal.reason || tr('text.noPattern');
   const meta = $('signalMeta');
   if (meta !== inertNode) {
-    meta.textContent = `${state.candle.symbol || state.selected} · ${state.candle.timeframe || state.timeframe} · ${state.candle.lastClose != null ? fmtPrice(Number(state.candle.lastClose)) : '--'} · rules only`;
+    meta.textContent = `${state.candle.symbol || state.selected} · ${state.candle.timeframe || state.timeframe} · ${state.candle.lastClose != null ? fmtPrice(Number(state.candle.lastClose)) : '--'} · ${tr('status.rules')}`;
   }
 }
 
+const SCOUT_MOODS = ['angry', 'sad', 'ticklish', 'funny'];
+
+function showScoutMood(mood) {
+  const orb = $('aiScoutOrb');
+  const bubble = $('aiScoutBubble');
+  const title = $('aiScoutTitle');
+  const text = $('aiScoutText');
+  if (orb === inertNode || bubble === inertNode || title === inertNode || text === inertNode) return;
+  const key = SCOUT_MOODS.includes(mood) ? mood : SCOUT_MOODS[0];
+  orb.dataset.mood = key;
+  title.textContent = `${tr('scout.title')} • ${tr(`scout.mood.${key}`).split('!')[0].split('.')[0].split('…')[0].slice(0, 24)}`;
+  text.textContent = tr(`scout.mood.${key}`);
+  bubble.dataset.signal = 'MOOD';
+  bubble.dataset.mood = key;
+  bubble.hidden = false;
+  clearTimeout(state.scoutHideTimer);
+  clearTimeout(state.scoutMoodTimer);
+  state.scoutHideTimer = setTimeout(() => { bubble.hidden = true; }, 5200);
+  state.scoutMoodTimer = setTimeout(() => { delete orb.dataset.mood; delete bubble.dataset.mood; }, 5200);
+}
+
 function showScoutMessage(message, kind = 'NO TRADE') {
+  const orb = $('aiScoutOrb');
   const bubble = $('aiScoutBubble');
   const title = $('aiScoutTitle');
   const text = $('aiScoutText');
   if (!bubble || !title || !text) return;
-  title.textContent = kind === 'BUY' ? 'ISYARAT BUY' : kind === 'SELL' ? 'ISYARAT SELL' : 'AI SCOUT';
+  if (orb !== inertNode) delete orb.dataset.mood;
+  delete bubble.dataset.mood;
+  title.textContent = kind === 'BUY' ? tr('scout.buy') : kind === 'SELL' ? tr('scout.sell') : tr('scout.title');
   text.textContent = message;
   bubble.dataset.signal = kind;
   bubble.hidden = false;
   clearTimeout(state.scoutHideTimer);
+  clearTimeout(state.scoutMoodTimer);
   state.scoutHideTimer = setTimeout(() => { bubble.hidden = true; }, 14000);
 }
 
@@ -1040,7 +1067,7 @@ function updateScout(data) {
   const key = signal.signature || `${data.symbol}:${data.timeframe}:${signal.action}:${signal.pattern || 'none'}`;
   if (!state.scoutLastKey) {
     state.scoutLastKey = key;
-    showScoutMessage('AI Scout aktif. Saya memantau pergerakan candle XAU/USD dan DXY.', 'NO TRADE');
+    showScoutMessage(tr('text.scoutActive'), 'NO TRADE');
     return;
   }
   if (key === state.scoutLastKey) return;
@@ -1109,6 +1136,7 @@ function initScout() {
     vy: -0.18,
     lastTurn: 0,
     hover: false,
+    pauseUntil: 0,
   };
   const bounds = () => {
     const width = root.offsetWidth || 52;
@@ -1132,21 +1160,63 @@ function initScout() {
     scout.y = window.innerHeight - 110;
   }
   render();
-  orb.addEventListener('click', () => {
-    if (page !== 'ai') {
-      window.location.assign('./ai.html');
+  let pointer = null;
+  let dragged = false;
+  const react = () => {
+    showScoutMood(SCOUT_MOODS[state.scoutMoodIndex % SCOUT_MOODS.length]);
+    state.scoutMoodIndex += 1;
+    scout.pauseUntil = performance.now() + 4200;
+    if (page !== 'ai') window.setTimeout(() => window.location.assign('./ai.html'), 650);
+  };
+  orb.addEventListener('pointerdown', event => {
+    if (event.button != null && event.button !== 0) return;
+    pointer = { id: event.pointerId, startX: event.clientX, startY: event.clientY, originX: scout.x, originY: scout.y };
+    dragged = false;
+    scout.hover = true;
+    orb.classList.add('dragging');
+    orb.setPointerCapture?.(event.pointerId);
+  });
+  orb.addEventListener('pointermove', event => {
+    if (!pointer || event.pointerId !== pointer.id) return;
+    const dx = event.clientX - pointer.startX;
+    const dy = event.clientY - pointer.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 6) dragged = true;
+    if (!dragged) return;
+    scout.x = pointer.originX + dx;
+    scout.y = pointer.originY + dy;
+    scout.pauseUntil = performance.now() + 2200;
+    render();
+  });
+  const endPointer = event => {
+    if (!pointer || event.pointerId !== pointer.id) return;
+    orb.classList.remove('dragging');
+    orb.releasePointerCapture?.(event.pointerId);
+    pointer = null;
+    scout.hover = false;
+    if (dragged) {
+      scout.pauseUntil = performance.now() + 3200;
       return;
     }
-    document.getElementById('aiChat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const chatInput = $('chatInput');
-    if (chatInput !== inertNode) chatInput.focus();
+    react();
+  };
+  orb.addEventListener('pointerup', endPointer);
+  orb.addEventListener('pointercancel', endPointer);
+  orb.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    react();
+    if (page === 'ai') {
+      document.getElementById('aiChat')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const chatInput = $('chatInput');
+      if (chatInput !== inertNode) chatInput.focus();
+    }
   });
   close?.addEventListener('click', () => { bubble.hidden = true; });
   root.addEventListener('mouseenter', () => { scout.hover = true; });
   root.addEventListener('mouseleave', () => { scout.hover = false; });
   if (reduced) return;
   const tick = timestamp => {
-    if (!scout.hover && !document.hidden) {
+    if (!scout.hover && !document.hidden && performance.now() > scout.pauseUntil) {
       if (timestamp - scout.lastTurn > 4600) {
         const angle = Math.random() * Math.PI * 2;
         scout.vx = Math.cos(angle) * 0.38;
@@ -1175,17 +1245,17 @@ function renderPlan(data) {
   $('planBody').innerHTML = `
     <p>${escapeHtml(data.reply || '')}</p>
     <div class="plan-grid">
-      ${cell('Symbol', escapeHtml(state.selected))}
-      ${cell('Bias', escapeHtml(String(plan.bias || '—').toUpperCase()))}
-      ${cell('Entry', price(plan.entry))}
-      ${cell('Stop loss', price(plan.stopLoss))}
-      ${cell('Take profit', price(plan.takeProfit))}
-      ${cell('Risk', `${plan.riskPct ?? 0}% • ${plan.units ?? 0} units`)}
+      ${cell(tr('label.symbol'), escapeHtml(state.selected))}
+      ${cell(tr('label.bias'), escapeHtml(String(plan.bias || '—').toUpperCase()))}
+      ${cell(tr('text.entry'), price(plan.entry))}
+      ${cell(tr('label.stopLoss'), price(plan.stopLoss))}
+      ${cell(tr('label.takeProfit'), price(plan.takeProfit))}
+      ${cell(tr('label.risk'), `${plan.riskPct ?? 0}% • ${plan.units ?? 0} ${tr('text.units')}`)}
     </div>
     <p>${escapeHtml(plan.rationale || '')}</p>
     <p class="muted">RSI14 ${analysis.rsi14 ?? '—'} • trend ${escapeHtml(analysis.trend || '—')} • R:R ${risk.rewardRisk ?? '—'}</p>
     <div class="risk-list">${checks}</div>`;
-  $('planStatus').textContent = risk.decision === 'blocked' ? 'BLOCKED' : 'PAPER APPROVAL';
+  $('planStatus').textContent = tr(risk.decision === 'blocked' ? 'status.blocked' : 'status.paperApproval');
   $('planStatus').classList.toggle('warn', risk.decision === 'blocked');
   $('planActions').hidden = false;
   $('approvePlanBtn').disabled = risk.decision === 'blocked';
@@ -1220,18 +1290,18 @@ async function rateMessage(index, rating) {
 async function submitPlan() {
   const btn = $('planBtn');
   btn.disabled = true;
-  $('planStatus').textContent = 'ANALYSING…';
+  $('planStatus').textContent = tr('status.analysing');
   try {
-    const data = await askAI('Bina cadangan paper trading untuk simbol ini berdasarkan graf semasa.', 'plan');
+    const data = await askAI(tr('text.planPrompt'), 'plan');
     state.currentPlan = data;
     renderPlan(data);
     audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
     await runDecision(`Kenapa AI mencadangkan ${data.plan?.bias || 'neutral'} untuk ${state.selected}?`);
-    const index = state.history.push({ role: 'ai', content: data.reply || 'AI plan generated.' }) - 1;
-    addMsg('ai', data.reply || 'AI plan generated.', index);
-    if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply || 'AI plan generated.');
+    const index = state.history.push({ role: 'ai', content: data.reply || tr('text.planGenerated') }) - 1;
+    addMsg('ai', data.reply || tr('text.planGenerated'), index);
+    if (window.SupabaseMemory?.enabled) saveChatMessage('ai', data.reply || tr('text.planGenerated'));
   } catch (error) {
-    $('planStatus').textContent = 'ERROR';
+    $('planStatus').textContent = tr('status.error');
     $('planBody').innerHTML = `<p class="down">${error.message}</p>`;
   } finally { btn.disabled = false; }
 }
@@ -1247,10 +1317,11 @@ async function decidePlan(decision) {
     decided_at: new Date().toISOString(),
   };
   state.planDecision = decision;
-  $('planStatus').textContent = decision === 'approved' ? 'APPROVED (PAPER)' : 'REJECTED';
+  $('planStatus').textContent = tr(decision === 'approved' ? 'status.approvedPaper' : 'status.rejected');
   $('planActions').hidden = true;
-  state.history.push({ role: 'user', content: `Plan ${state.selected}: ${decision}. Tiada execution sebenar.` });
-  addMsg('user', `Plan ${state.selected}: ${decision}. Tiada execution sebenar.`);
+  const decisionNote = `Plan ${state.selected}: ${decision}. ${tr('text.noExecution')}`;
+  state.history.push({ role: 'user', content: decisionNote });
+  addMsg('user', decisionNote);
   audit('ai_plan_decided', 'plan', { symbol: state.selected, decision, provider: state.currentPlan?.provider });
   if (window.SupabaseMemory?.enabled) {
     try { await window.SupabaseMemory.savePlan(plan); }
@@ -1275,71 +1346,71 @@ function renderAgent() {
   const monitor = state.monitor || {};
   const rules = Array.isArray(monitor.rules) ? monitor.rules : [];
   const events = Array.isArray(monitor.events) ? monitor.events : [];
-  const lastRun = monitor.lastRunAt ? new Date(monitor.lastRunAt).toLocaleTimeString() : 'not run yet';
-  $('monitorStatus').textContent = `Every ${monitor.intervalSeconds || 60}s · ${rules.length} rule(s) · ${lastRun}`;
+  const lastRun = monitor.lastRunAt ? new Date(monitor.lastRunAt).toLocaleTimeString() : tr('text.notRunYet');
+  $('monitorStatus').textContent = `${tr('text.monitorEvery')} ${monitor.intervalSeconds || 60}s · ${rules.length} ${tr('text.rules')} · ${lastRun}`;
   $('monitorEvents').innerHTML = events.length ? events.map(event => `
     <div class="agent-event ${escapeHtml(String(event.type || ''))}">
       <strong>${escapeHtml(String(event.symbol || ''))}</strong> ${escapeHtml(String(event.reason || event.type || ''))}
       ${event.at ? `<br />${escapeHtml(new Date(event.at).toLocaleTimeString())}` : ''}
-    </div>`).join('') : '<div class="agent-event">No monitor events yet.</div>';
+    </div>`).join('') : `<div class="agent-event">${tr('text.monitorNoEvents')}</div>`;
 
   const backtest = state.backtest;
   if (!backtest) {
-    $('backtestResult').textContent = 'Uses the selected chart series.';
+    $('backtestResult').textContent = tr('text.backtestUses');
   } else if (backtest.insufficient) {
-    $('backtestResult').textContent = `Need ${backtest.required} points; got ${backtest.points}.`;
+    $('backtestResult').textContent = `${tr('text.backtestNeed')} ${backtest.required} ${tr('text.pointsShort')} ${backtest.points}.`;
   } else {
     $('backtestResult').innerHTML = `
-      <div>SMA ${backtest.fast}/${backtest.slow} · ${backtest.tradeCount} trades · win ${backtest.winRate}%</div>
-      <div>Return ${backtest.totalReturnPct}% · max drawdown ${backtest.maxDrawdownPct}%</div>
-      <div>Educational simulation only.</div>`;
+      <div>SMA ${backtest.fast}/${backtest.slow} · ${backtest.tradeCount} ${tr('text.trades')} · ${tr('text.win')} ${backtest.winRate}%</div>
+      <div>${tr('text.return')} ${backtest.totalReturnPct}% · ${tr('text.maxDrawdown')} ${backtest.maxDrawdownPct}%</div>
+      <div>${tr('text.educationalOnly')}</div>`;
   }
 
-  $('brokerMode').textContent = state.broker?.liveOrdersEnabled ? 'LIVE DISABLED' : 'PAPER';
+  $('brokerMode').textContent = tr(state.broker?.liveOrdersEnabled ? 'status.liveDisabled' : 'status.paper');
   const orders = state.paperOrders.slice(0, 10);
   $('paperOrders').innerHTML = orders.length ? orders.map(order => {
     const payload = order.payload && typeof order.payload === 'object' ? order.payload : order;
     const evaluation = order.evaluation || {};
     return `<div class="paper-order ${escapeHtml(String(order.status || payload.status || 'simulated'))}">
       <strong>${escapeHtml(String(payload.symbol || order.symbol || ''))}</strong> ${escapeHtml(String(payload.side || order.side || ''))}
-      · entry ${agentPrice(payload.entry ?? order.entry)} · ${escapeHtml(String(payload.status || order.status || 'simulated'))}
-      ${evaluation.outcome ? `<br />${escapeHtml(String(evaluation.outcome))} · pnl ${escapeHtml(String(evaluation.pnl ?? 0))}` : ''}
+      · ${tr('text.entry')} ${agentPrice(payload.entry ?? order.entry)} · ${escapeHtml(String(payload.status || order.status || 'simulated'))}
+      ${evaluation.outcome ? `<br />${escapeHtml(String(evaluation.outcome))} · P&L ${escapeHtml(String(evaluation.pnl ?? 0))}` : ''}
     </div>`;
-  }).join('') : '<div class="paper-order">No paper orders yet.</div>';
+  }).join('') : `<div class="paper-order">${tr('text.noPaperOrders')}</div>`;
 
   const live = state.liveStatus || {};
   const circuit = live.circuitBreaker || {};
   $('liveStatus').innerHTML = `
-    <div>Mode ${escapeHtml(String(live.mode || 'paper'))} · kill switch ${live.killSwitch ? 'ARMED' : 'disarmed'} · circuit ${circuit.tripped ? `OPEN (${escapeHtml(String(circuit.reason || 'tripped'))})` : 'closed'}</div>
-    <div>Adapter ${escapeHtml(String(live.adapter?.name || 'disabled'))} · credentials ${live.vault?.configured ? 'configured' : 'missing'} · live orders ${live.liveOrdersEnabled ? 'READY' : 'blocked'}</div>
+    <div>${tr('status.mode')} ${escapeHtml(String(live.mode || 'paper'))} · ${tr('text.killSwitch')} ${live.killSwitch ? tr('status.armed') : tr('status.disarmed')} · ${tr('text.circuit')} ${circuit.tripped ? `${tr('status.open')} (${escapeHtml(String(circuit.reason || 'tripped'))})` : tr('status.closed')}</div>
+    <div>${tr('text.adapter')} ${escapeHtml(String(live.adapter?.name || 'disabled'))} · ${tr('text.credentials')} ${live.vault?.configured ? tr('status.configured') : tr('status.missing')} · ${tr('text.liveOrders')} ${live.liveOrdersEnabled ? tr('status.ready') : tr('status.blocked')}</div>
     <div>${escapeHtml(String(live.notice || ''))}</div>`;
 
   const proposal = state.liveProposal;
   if (!proposal) {
-    $('liveProposal').textContent = 'Generate and approve a plan first.';
+    $('liveProposal').textContent = tr('text.approvalPrompt');
   } else {
     const failed = (proposal.assessment?.checks || []).filter(item => !item.pass).map(item => item.name);
     $('liveProposal').innerHTML = `
       <div>${escapeHtml(String(proposal.symbol || ''))} ${escapeHtml(String(proposal.side || ''))} · ${escapeHtml(String(proposal.decision || ''))}</div>
-      <div>${proposal.intent?.entry != null ? `entry ${agentPrice(proposal.intent.entry)} · units ${proposal.intent.units} · notional ${proposal.intent.notional}` : ''}</div>
-      <div>${failed.length ? `Failed: ${failed.map(escapeHtml).join(', ')}` : 'All live risk checks passed.'}</div>`;
+      <div>${proposal.intent?.entry != null ? `${tr('text.entry')} ${agentPrice(proposal.intent.entry)} · ${tr('text.units')} ${proposal.intent.units} · ${tr('text.notional')} ${proposal.intent.notional}` : ''}</div>
+      <div>${failed.length ? `${tr('text.failed')} ${failed.map(escapeHtml).join(', ')}` : tr('text.checksPassed')}</div>`;
   }
   $('liveApproval').textContent = state.liveApproval
-    ? `Approval ${state.liveApproval.code} issued until ${new Date(state.liveApproval.expiresAt).toLocaleTimeString()}.`
+    ? `${tr('text.approvalIssued')} ${state.liveApproval.code} ${tr('text.issuedUntil')} ${new Date(state.liveApproval.expiresAt).toLocaleTimeString()}.`
     : '';
   $('liveResult').textContent = state.liveResult
-    ? `${state.liveResult.status || 'result'}${state.liveResult.code ? ` · ${state.liveResult.code}` : ''}${state.liveResult.reason ? ` · ${state.liveResult.reason}` : ''}`
+    ? `${state.liveResult.status || tr('text.result')}${state.liveResult.code ? ` · ${state.liveResult.code}` : ''}${state.liveResult.reason ? ` · ${state.liveResult.reason}` : ''}`
     : '';
   $('liveEvents').innerHTML = state.liveEvents.length ? state.liveEvents.slice(0, 10).map(event => `
     <div class="agent-event ${escapeHtml(String(event.status || ''))}">
       <strong>${escapeHtml(String(event.event || 'live_event'))}</strong> ${escapeHtml(String(event.status || ''))}
     </div>`).join('') : '';
   $('auditVerify').textContent = state.auditVerify
-    ? `Audit chain ${state.auditVerify.ok ? 'valid' : 'INVALID'} · ${state.auditVerify.count || 0} entries${state.auditVerify.error ? ` · ${state.auditVerify.error}` : ''}`
+    ? `${tr('text.auditChain')} ${state.auditVerify.ok ? tr('text.valid') : tr('text.invalid')} · ${state.auditVerify.count || 0} ${tr('text.auditEntries')}${state.auditVerify.error ? ` · ${state.auditVerify.error}` : ''}`
     : '';
   const auditLogs = state.auditLogs;
   const entries = Array.isArray(auditLogs?.entries) ? auditLogs.entries : [];
-  $('auditLogCount').textContent = `Showing ${entries.length} of ${auditLogs?.count ?? 0} audit entries${auditLogs?.event ? ` · ${auditLogs.event}` : ''}`;
+  $('auditLogCount').textContent = `${tr('text.showing')} ${entries.length} ${tr('text.of')} ${auditLogs?.count ?? 0} ${tr('text.auditEntries')}${auditLogs?.event ? ` · ${auditLogs.event}` : ''}`;
   $('auditLogList').innerHTML = entries.length ? entries.map(entry => `
     <div class="agent-event audit-entry">
       <strong>#${escapeHtml(String(entry.seq ?? ''))} ${escapeHtml(String(entry.event || ''))}</strong><br />
@@ -1382,7 +1453,7 @@ async function loadAgentState() {
     renderAgent();
     await Promise.all([loadPaperOrders(), loadLiveEvents(), loadAuditLogs()]);
   } catch {
-    $('monitorStatus').textContent = 'Agent APIs unavailable.';
+    $('monitorStatus').textContent = tr('text.agentUnavailable');
   }
 }
 
@@ -1630,7 +1701,7 @@ async function initChat() {
         state.currentPlan = data;
         renderPlan(data);
         audit('ai_plan_generated', 'plan', { symbol: state.selected, decision: data.risk?.decision, provider: data.provider });
-        await runDecision(`Kenapa AI mencadangkan ${data.plan?.bias || 'neutral'} untuk ${state.selected}?`);
+    await runDecision(`${tr('text.planQuestion')} ${data.plan?.bias || 'neutral'} ${tr('text.forSymbol')} ${state.selected}?`);
       }
       const aiIndex = state.history.push({ role: 'ai', content: data.reply }) - 1;
       addMsg('ai', data.reply, aiIndex);
@@ -1766,7 +1837,7 @@ function tickClock() {
   $('clock').textContent = now;
   $('statusClock').textContent = now;
   const hour = new Date().getHours();
-  $('sessionBadge').textContent = hour < 8 ? 'Asia session' : hour < 16 ? 'London session' : hour < 22 ? 'New York session' : 'Extended hours';
+  $('sessionBadge').textContent = hour < 8 ? tr('session.asia') : hour < 16 ? tr('session.london') : hour < 22 ? tr('session.newYork') : tr('session.extended');
 }
 
 async function checkAiStatus() {
@@ -1775,8 +1846,8 @@ async function checkAiStatus() {
     const data = await response.json();
     state.aiProvider = data.aiProvider || 'local';
     state.aiModel = data.aiModel || 'rules';
-    $('statusAi').textContent = state.aiProvider === 'groq' ? `GROQ ${state.aiModel}` : 'LOCAL RULES';
-  } catch { $('statusAi').textContent = 'LOCAL RULES'; }
+    $('statusAi').textContent = state.aiProvider === 'groq' ? `GROQ ${state.aiModel}` : tr('status.localRules');
+  } catch { $('statusAi').textContent = tr('status.localRules'); }
 }
 function randomWalk() {
   MARKET.forEach(m => {
@@ -1806,11 +1877,11 @@ async function generateSummary() {
   try {
     const response = await fetch('/api/summary', { cache: 'no-store' });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Summary unavailable');
+    if (!response.ok) throw new Error(payload.error || tr('text.summaryUnavailable'));
     state.summary = payload;
     renderMarketSummary();
   } catch (error) {
-    $('marketSummary').innerHTML = `<p class="muted">${escapeHtml(error.message || 'Summary unavailable')}</p>`;
+    $('marketSummary').innerHTML = `<p class="muted">${escapeHtml(error.message || tr('text.summaryUnavailable'))}</p>`;
   } finally {
     if (button) button.disabled = false;
   }
@@ -1924,9 +1995,9 @@ async function refreshLongbridgeQuotes() {
 function resetPlan() {
   state.currentPlan = null;
   state.planDecision = null;
-  $('planStatus').textContent = 'Paper only';
+  $('planStatus').textContent = tr('status.paperOnly');
   $('planStatus').classList.remove('warn');
-  $('planBody').innerHTML = '<p class="muted">Tiada cadangan lagi. Pilih XAU/USD atau DXY, tekan “AI Trade Plan”.</p>';
+  $('planBody').innerHTML = `<p class="muted">${tr('text.noPlan')}</p>`;
   $('planActions').hidden = true;
   $('approvePlanBtn').disabled = false;
   $('rejectPlanBtn').disabled = false;
@@ -1939,7 +2010,7 @@ async function persistProfile() {
   try {
     await window.SupabaseMemory.saveProfile({
       user_key: state.userKey,
-      preferences: { theme: 'dark', default_symbol: state.selected, timeframe: state.timeframe }
+      preferences: { theme: currentTheme(), default_symbol: state.selected, timeframe: state.timeframe, language: currentLang() }
     });
   } catch { setAuthStatus('Signed in, but preferences could not be saved. Check the Supabase migration and RLS policies.'); }
 }
@@ -2010,6 +2081,16 @@ function bind() {
 async function boot() {
   await window.SupabaseMemory?.restoreSession?.();
   state.userKey = window.SupabaseMemory?.getUserKey?.() || null;
+  initSettings();
+  onLangChange(() => {
+    renderAll();
+    renderPaperState();
+    renderCandle();
+    renderAlerts();
+    renderAgent();
+    renderMarketSummary();
+    loadNews();
+  });
   updateAuthUI();
   renderControls();
   loadChartTemplates();

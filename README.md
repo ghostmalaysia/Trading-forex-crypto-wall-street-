@@ -54,7 +54,9 @@ node server.mjs
 # open http://127.0.0.1:8080/
 ```
 
-The static web UI is split into three short pages: `/` (Market Terminal), `/trade.html` (Trade Operations), and `/ai.html` (AI Platform). Every AI feature lives on `/ai.html`: candle monitor, buy/sell signal, chat, AI Trading Room, P&L chart, research/learning, AI trade plan, paper execution, guarded live approval, and audit trail. The roaming AI Scout is a round robot on all three pages and opens the AI Platform when clicked from Market or Trade Ops.
+The static web UI is split into three short pages: `/` (Market Terminal), `/trade.html` (Trade Operations), and `/ai.html` (AI Platform). Every AI feature lives on `/ai.html`: candle monitor, buy/sell signal, chat, AI Trading Room, P&L chart, research/learning, AI trade plan, paper execution, guarded live approval, and audit trail. The roaming AI Scout is a Grok-inspired dark orb on all three pages; drag it anywhere with mouse or touch, or tap it for angry, sad, ticklish and funny reflections. A tap from Market or Trade Ops then opens the AI Platform.
+
+The **Settings** button in the sidebar stores the team color (`blue`, `black`, `green`, `red`) and interface language (`ms`, `en`, `zh`, `ta`) in `localStorage`. Labels, placeholders, ARIA text, dynamic panels and AI prompt language follow the selected language; AI answers remain educational and paper-only. “India” is mapped to Tamil in the Malaysian context.
 
 Opening `web/index.html` directly still works for the static UI, but AI requests require `server.mjs`.
 
@@ -124,7 +126,7 @@ The public demo runs on a simulated `$100` account: maximum 1% risk per trade, 3
 
 `POST /api/ai` now accepts `mode:"research"` for a structured nine-section report (evidence, interpretation, USD/gold macro checklist, learned paper lessons, scenarios, paper sizing, risk/invalidation, and confidence), `mode:"explain"` for the AI Trading Room, and `mode:"candle"` for candle-pattern explanations. The Trading Room answers “why BUY/SELL/NO TRADE?” from chart evidence, deterministic risk checks, and paper outcomes; it never places an order. `GET /api/learning` returns self-updating XAU/USD and DXY lessons; outcomes recorded by `POST /api/paper/evaluate` feed the next analysis. Files default to `data/paper-learning.json` and can be overridden with `PAPER_LEARNING_FILE`.
 
-`POST /api/candles` detects doji, hammer, inverted hammer, shooting star, hanging man, engulfing, harami, marubozu and three-candle formations from a supplied numeric or OHLC series, then explains the body, wicks, confirmation and invalidation in Malay. The AI Platform page renders the same shared detector on its candlestick chart and hosts a small roaming AI Scout that announces BUY/SELL candle signals while you browse; every signal remains educational and paper-only. The AI is also supplied with a gold/USD playbook (real yields, DXY, Fed, CPI/PCE/NFP, session liquidity, cross-asset rules) and the current configured news feed in `/api/news`, which is injected into chat, research and decision prompts.
+`POST /api/candles` detects doji, hammer, inverted hammer, shooting star, hanging man, engulfing, harami, marubozu and three-candle formations from a supplied numeric or OHLC series, then explains the body, wicks, confirmation and invalidation. The AI Platform page renders the same shared detector on its candlestick chart and hosts a draggable Grok-inspired AI Scout that announces BUY/SELL candle signals while you browse and reacts to taps with angry, sad, ticklish and funny faces; every signal remains educational and paper-only. The AI is also supplied with a gold/USD playbook (real yields, DXY, Fed, CPI/PCE/NFP, session liquidity, cross-asset rules) and the current configured news feed in `/api/news`, which is injected into chat, research and decision prompts.
 
 ## Guarded live workflow
 

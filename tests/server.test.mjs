@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { applyTranslations, languages, messages, themes, translate } from '../web/settings.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const rising = Array.from({ length: 24 }, (_, index) => 2300 + index * 4);
@@ -31,6 +32,43 @@ async function waitForHealth(url, child, logs) {
   }
   throw new Error(`server did not become ready: ${logs()}`);
 }
+
+test('settings dictionaries cover every supported language', () => {
+  assert.deepEqual(languages.map(item => item.code), ['ms', 'en', 'zh', 'ta']);
+  assert.deepEqual(themes.map(item => item.code), ['blue', 'black', 'green', 'red']);
+  const keys = Object.keys(messages.en);
+  for (const code of languages.map(item => item.code)) {
+    assert.deepEqual(Object.keys(messages[code]).sort(), keys.sort(), `${code} dictionary drifted`);
+  }
+  for (const key of ['settings.title', 'chart.templateOption', 'scout.mood.angry', 'scout.mood.sad', 'scout.mood.ticklish', 'scout.mood.funny']) {
+    assert.ok(keys.includes(key), `missing key ${key}`);
+  }
+});
+
+test('settings translation falls back safely outside a browser', () => {
+  assert.equal(translate('settings.title', 'en'), 'Settings');
+  assert.equal(translate('not.a.real.key', 'ms'), 'not.a.real.key');
+  assert.doesNotThrow(() => applyTranslations());
+});
+
+test('web pages expose settings controls and Grok-inspired draggable orb markup', async () => {
+  const index = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  const trade = await readFile(new URL('../web/trade.html', import.meta.url), 'utf8');
+  const ai = await readFile(new URL('../web/ai.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../web/app.js', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../web/styles.css', import.meta.url), 'utf8');
+  for (const page of [index, trade, ai]) {
+    assert.match(page, /data-i18n="nav\.ai"/);
+    assert.match(page, /data-i18n="auth\.cloudMemory"/);
+  }
+  assert.match(ai, /id="aiScoutOrb"/);
+  assert.match(ai, /class="scout-grok-mark"/);
+  assert.match(app, /pointerdown/);
+  assert.match(app, /pointermove/);
+  assert.match(app, /SCOUT_MOODS/);
+  assert.match(styles, /data-mood="funny"/);
+  assert.match(styles, /touch-action:none/);
+});
 
 test('HTTP endpoints serve health, market, AI plans, and static files', { timeout: 30000 }, async () => {
   const stubPort = await freePort();
@@ -157,10 +195,15 @@ test('HTTP endpoints serve health, market, AI plans, and static files', { timeou
     assert.equal(sharedModule.status, 200);
     assert.match(sharedModule.headers.get('content-type'), /javascript/);
 
+    const settingsModule = await fetch(`${base}/settings.js`);
+    assert.equal(settingsModule.status, 200);
+    assert.match(settingsModule.headers.get('content-type'), /javascript/);
+
     const marketPage = await (await fetch(`${base}/`)).text();
     assert.match(marketPage, /Market Terminal/);
     assert.match(marketPage, /id="aiScoutOrb"/);
-    assert.match(marketPage, /class="scout-eye scout-eye-left"/);
+    assert.match(marketPage, /class="scout-grok-mark"/);
+    assert.match(marketPage, /data-i18n="nav\.ai"/);
 
     const aiPage = await (await fetch(`${base}/ai.html`)).text();
     assert.match(aiPage, /AI Platform/);

@@ -17,9 +17,9 @@
         </div>
       </div>
       <nav class="nav" aria-label="Main navigation">
-        <a href="./index.html"><span class="nav-index">01</span>Market</a>
-        <a class="active" href="./trade.html"><span class="nav-index">02</span>Trade Ops</a>
-        <a href="./ai.html"><span class="nav-index">03</span>AI Platform</a>
+        <a href="./index.html"><span class="nav-index">01</span><span data-i18n="nav.market">Market</span></a>
+        <a class="active" href="./trade.html"><span class="nav-index">02</span><span data-i18n="nav.trade">Trade Ops</span></a>
+        <a href="./ai.html"><span class="nav-index">03</span><span data-i18n="nav.ai">AI Platform</span></a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -27,37 +27,37 @@
         <small>Mock data • Live provider optional</small>
       </div>
       <section class="sidebar-card auth-card" aria-labelledby="memoryHeading">
-        <h3 id="memoryHeading">Cloud memory</h3>
-        <p id="authStatus" class="auth-status" aria-live="polite">Sign in to save your chat and preferences securely.</p>
+        <h3 id="memoryHeading" data-i18n="auth.cloudMemory">Cloud memory</h3>
+        <p id="authStatus" class="auth-status" aria-live="polite" data-i18n="auth.signInPrompt">Sign in to save your chat and preferences securely.</p>
         <form id="configForm" class="auth-form config-form" hidden>
-          <label for="configUrl">Supabase URL</label>
+          <label for="configUrl" data-i18n="auth.url">Supabase URL</label>
           <input id="configUrl" type="url" inputmode="url" placeholder="https://PROJECT.supabase.co" autocomplete="url" required />
-          <label for="configKey">Publishable / anon key</label>
-          <input id="configKey" type="password" autocomplete="off" placeholder="Saved on this device; blank keeps current key" />
+          <label for="configKey" data-i18n="auth.key">Publishable / anon key</label>
+          <input id="configKey" type="password" autocomplete="off" placeholder="Saved on this device; blank keeps current key" data-i18n-placeholder="auth.keyHint" />
           <div class="auth-actions">
-            <button id="configTestBtn" type="button">Test</button>
-            <button id="configSaveBtn" type="submit">Save</button>
+            <button id="configTestBtn" type="button" data-i18n="action.test">Test</button>
+            <button id="configSaveBtn" type="submit" data-i18n="action.save">Save</button>
           </div>
-          <button id="configClearBtn" type="button" hidden>Clear saved settings</button>
-          <small class="config-hint">Never use a service_role key in the browser.</small>
+          <button id="configClearBtn" type="button" hidden data-i18n="auth.clear">Clear saved settings</button>
+          <small class="config-hint" data-i18n="auth.hint">Never use a service_role key in the browser.</small>
         </form>
         <form id="authForm" class="auth-form" hidden>
-          <label for="authEmail">Email</label>
+          <label for="authEmail" data-i18n="auth.email">Email</label>
           <input id="authEmail" type="email" autocomplete="email" required />
-          <label for="authPassword">Password</label>
+          <label for="authPassword" data-i18n="auth.password">Password</label>
           <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
           <div class="auth-actions">
-            <button id="signInBtn" type="submit">Sign in</button>
-            <button id="signUpBtn" type="button">Create account</button>
+            <button id="signInBtn" type="submit" data-i18n="auth.signIn">Sign in</button>
+            <button id="signUpBtn" type="button" data-i18n="auth.signUp">Create account</button>
           </div>
         </form>
-        <button id="signOutBtn" type="button" hidden>Sign out</button>
-        <button id="configEditBtn" type="button" hidden>Change Supabase settings</button>
+        <button id="signOutBtn" type="button" hidden data-i18n="auth.signOut">Sign out</button>
+        <button id="configEditBtn" type="button" hidden data-i18n="auth.changeSettings">Change Supabase settings</button>
         <div id="serverSession" class="server-session">
-          <small id="serverSessionStatus">Server session: checking…</small>
+          <small id="serverSessionStatus" data-i18n="auth.serverSession">Server session: checking…</small>
           <div class="auth-actions">
-            <button id="serverSignInBtn" type="button">Server sign in</button>
-            <button id="serverSignOutBtn" type="button" hidden>Server sign out</button>
+            <button id="serverSignInBtn" type="button" data-i18n="auth.serverSignIn">Server sign in</button>
+            <button id="serverSignOutBtn" type="button" hidden data-i18n="auth.serverSignOut">Server sign out</button>
           </div>
         </div>
       </section>
@@ -67,20 +67,20 @@
       <header class="topbar" id="dashboard">
         <div class="topbar-title">
           <div>
-            <h2>Trade Operations</h2>
+            <h2 data-i18n="top.trade">Trade Operations</h2>
             <p id="clock" aria-live="off">--</p>
           </div>
-          <span id="sessionBadge" class="session-badge">OPS</span>
+          <span id="sessionBadge" class="session-badge" data-i18n="badge.trade">OPS</span>
         </div>
         <div class="topbar-actions">
-          <select id="symbolSelect" aria-label="Symbol"></select>
-          <select id="timeframeSelect" aria-label="Timeframe">
+          <select id="symbolSelect" aria-label="Symbol" data-i18n-aria="label.symbol"></select>
+          <select id="timeframeSelect" aria-label="Timeframe" data-i18n-aria="label.timeframe">
             <option value="1H">1H</option>
             <option value="4H">4H</option>
             <option value="1D" selected>1D</option>
           </select>
-          <button id="refreshBtn" class="primary" type="button">Refresh</button>
-          <a class="badge live nav-cta" href="./ai.html">AI Platform →</a>
+          <button id="refreshBtn" class="primary" type="button" data-i18n="action.refresh">Refresh</button>
+          <a class="badge live nav-cta" href="./ai.html" data-i18n="action.openAi">AI Platform →</a>
         </div>
       </header>
 
@@ -89,21 +89,21 @@
       <section class="grid trade-grid">
         <article class="panel" id="screener">
           <div class="panel-head">
-            <h3>Focus Screener</h3>
+            <h3 data-i18n="panel.screener">Focus Screener</h3>
             <span class="badge" id="screenerProvider">--</span>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Bias</th></tr></thead>
+              <thead><tr><th data-i18n="label.symbol">Symbol</th><th data-i18n="label.price">Price</th><th data-i18n="label.change">Change</th><th data-i18n="label.bias">Bias</th></tr></thead>
               <tbody id="screenerBody"></tbody>
             </table>
           </div>
-          <p class="disclaimer">Rule-based screen from the same server snapshot. Informational only.</p>
+          <p class="disclaimer" data-i18n="text.screenerNote">Rule-based screen from the same server snapshot. Informational only.</p>
         </article>
 
         <article class="panel alerts-panel" id="alerts">
           <div class="panel-head">
-            <h3>Price Alerts</h3>
+            <h3 data-i18n="panel.alerts">Price Alerts</h3>
             <span class="badge warn" id="alertCount">0 active</span>
           </div>
           <form id="alertForm" class="alert-form">
@@ -115,81 +115,82 @@
               <option value=">=">≥</option>
               <option value="<=">≤</option>
             </select>
-            <input id="alertThreshold" type="number" step="any" min="0" placeholder="Price" required aria-label="Alert price" />
-            <button type="submit">Add</button>
+            <input id="alertThreshold" type="number" step="any" min="0" placeholder="Price" required aria-label="Alert price" data-i18n-placeholder="placeholder.alertPrice" data-i18n-aria="placeholder.alertPrice" />
+            <button type="submit" data-i18n="action.add">Add</button>
           </form>
           <div id="alertList" class="alert-list"></div>
           <div id="alertToast" class="alert-toast" aria-live="polite" hidden></div>
-          <p class="disclaimer">Alerts notify in this browser. No orders are placed.</p>
+          <p class="disclaimer" data-i18n="text.alertsNote">Alerts notify in this browser. No orders are placed.</p>
         </article>
 
         <article class="panel calendar-panel" id="calendar">
           <div class="panel-head">
-            <h3>Economic Calendar</h3>
-            <span class="badge warn">Curated mock</span>
+            <h3 data-i18n="panel.calendar">Economic Calendar</h3>
+            <span class="badge warn" data-i18n="status.curated">Curated mock</span>
           </div>
           <div id="calendarList" class="calendar-list"></div>
-          <p class="disclaimer">Times are UTC. Events are illustrative until a calendar data provider is connected.</p>
+          <p class="disclaimer" data-i18n="text.calendarNote">Times are UTC. Events are illustrative until a calendar data provider is connected.</p>
         </article>
 
         <article class="panel agent-panel" id="agent">
           <div class="panel-head">
-            <h3>Agent Lab</h3>
-            <span class="badge warn" id="brokerMode">PAPER</span>
+            <h3 data-i18n="panel.agent">Agent Lab</h3>
+            <span class="badge warn" id="brokerMode" data-i18n="status.paper">PAPER</span>
           </div>
           <div class="agent-grid">
             <section class="agent-block">
-              <h4>Monitor</h4>
+              <h4 data-i18n="panel.monitor">Monitor</h4>
               <div id="monitorStatus" class="agent-status">Loading…</div>
               <div id="monitorEvents" class="agent-events"></div>
-              <button id="runMonitorBtn" type="button">Run monitor cycle</button>
+              <button id="runMonitorBtn" type="button" data-i18n="action.runMonitor">Run monitor cycle</button>
             </section>
             <section class="agent-block">
-              <h4>Educational backtest</h4>
-              <button id="backtestBtn" type="button">Run SMA cross</button>
+              <h4 data-i18n="panel.backtest">Educational backtest</h4>
+              <button id="backtestBtn" type="button" data-i18n="action.backtest">Run SMA cross</button>
               <div id="backtestResult" class="agent-result">Uses the selected chart series.</div>
             </section>
             <section class="agent-block">
-              <h4>Trade handoff</h4>
+              <h4 data-i18n="panel.handoff">Trade handoff</h4>
               <p class="muted">AI trade plan, paper execution dan guarded live kini berada di satu muka surat AI Platform.</p>
-              <a class="badge live nav-cta" href="./ai.html">Buka AI Trade Layer →</a>
+              <a class="badge live nav-cta" href="./ai.html" data-i18n="action.handoff">Buka AI Trade Layer →</a>
             </section>
           </div>
           <section class="agent-block audit-block">
-            <h4>Audit trail</h4>
+            <h4 data-i18n="panel.audit">Audit trail</h4>
             <div class="audit-controls">
-              <label for="auditEvent">Event</label>
-              <input id="auditEvent" type="text" placeholder="All events" autocomplete="off" />
-              <label for="auditLimit">Limit</label>
+              <label for="auditEvent" data-i18n="label.event">Event</label>
+              <input id="auditEvent" type="text" placeholder="All events" autocomplete="off" data-i18n-placeholder="placeholder.auditEvent" />
+              <label for="auditLimit" data-i18n="label.limit">Limit</label>
               <input id="auditLimit" type="number" min="1" max="200" value="50" />
-              <button id="loadAuditBtn" type="button">Load</button>
+              <button id="loadAuditBtn" type="button" data-i18n="action.loadAudit">Load</button>
             </div>
             <div id="auditLogCount" class="agent-status">Loading audit trail…</div>
             <div id="auditLogList" class="agent-events audit-list"></div>
           </section>
-          <p class="disclaimer">Live orders require server credentials, a wired adapter, admin token, approval secret, explicit human approval, and a disarmed kill switch. The default adapter blocks every live order.</p>
+          <p class="disclaimer" data-i18n="text.liveDisclaimer">Live orders require server credentials, a wired adapter, admin token, approval secret, explicit human approval, and a disarmed kill switch. The default adapter blocks every live order.</p>
         </article>
       </section>
 
       <footer class="statusbar">
-        <span><span class="dot offline" id="statusDot"></span>Data: <strong id="statusProvider">SIMULATED</strong></span>
-        <span>AI: <strong id="statusAi">LOCAL RULES</strong></span>
-        <span>Focus: <strong>XAU/USD • DXY</strong></span>
-        <span>Mode: <strong>PAPER</strong></span>
+        <span><span class="dot offline" id="statusDot"></span><span data-i18n="status.data">Data</span>: <strong id="statusProvider" data-i18n="status.simulated">SIMULATED</strong></span>
+        <span><span data-i18n="status.ai">AI</span>: <strong id="statusAi">LOCAL RULES</strong></span>
+        <span><span data-i18n="status.focus">Focus</span>: <strong>XAU/USD • DXY</strong></span>
+        <span><span data-i18n="status.mode">Mode</span>: <strong data-i18n="status.paper">PAPER</strong></span>
         <span id="statusClock">--</span>
       </footer>
     </main>
   </div>
 
   <div id="aiScout" class="ai-scout" hidden>
-    <button id="aiScoutOrb" class="ai-scout-orb" type="button" aria-label="Buka AI Assistant">
+    <button id="aiScoutOrb" class="ai-scout-orb" type="button" aria-label="Buka AI Assistant" data-i18n-aria="scout.open">
       <span class="scout-antenna"></span>
+      <span class="scout-grok-mark" aria-hidden="true"></span>
       <span class="scout-eye scout-eye-left"></span>
       <span class="scout-eye scout-eye-right"></span>
       <span class="scout-mouth"></span>
     </button>
     <div id="aiScoutBubble" class="ai-scout-bubble" hidden>
-      <button id="aiScoutClose" class="ai-scout-close" type="button" aria-label="Tutup mesej AI">×</button>
+      <button id="aiScoutClose" class="ai-scout-close" type="button" aria-label="Tutup mesej AI" data-i18n-aria="scout.close">×</button>
       <strong id="aiScoutTitle">AI SCOUT</strong>
       <p id="aiScoutText"></p>
     </div>
