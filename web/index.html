@@ -13,14 +13,14 @@
         <div class="logo">TW</div>
         <div>
           <h1>TradeWall</h1>
-          <p>Forex • Crypto • Stocks</p>
+          <p>Forex • Gold • Crypto</p>
         </div>
       </div>
       <nav class="nav" aria-label="Main navigation">
-        <a class="active" href="#dashboard">Dashboard</a>
-        <a href="#watchlist">Watchlist</a>
-        <a href="#news">News</a>
-        <a href="#ai">AI Assistant</a>
+        <a class="active" href="#dashboard"><span class="nav-index">01</span>Dashboard</a>
+        <a href="#watchlist"><span class="nav-index">02</span>Watchlist</a>
+        <a href="#news"><span class="nav-index">03</span>News</a>
+        <a href="#ai"><span class="nav-index">04</span>AI Assistant</a>
       </nav>
       <div class="sidebar-card">
         <h3>Data Status</h3>
@@ -30,7 +30,19 @@
       <section class="sidebar-card auth-card" aria-labelledby="memoryHeading">
         <h3 id="memoryHeading">Cloud memory</h3>
         <p id="authStatus" class="auth-status" aria-live="polite">Sign in to save your chat and preferences securely.</p>
-        <form id="authForm" class="auth-form">
+        <form id="configForm" class="auth-form config-form" hidden>
+          <label for="configUrl">Supabase URL</label>
+          <input id="configUrl" type="url" inputmode="url" placeholder="https://PROJECT.supabase.co" autocomplete="url" required />
+          <label for="configKey">Publishable / anon key</label>
+          <input id="configKey" type="password" autocomplete="off" placeholder="Saved on this device; blank keeps current key" />
+          <div class="auth-actions">
+            <button id="configTestBtn" type="button">Test</button>
+            <button id="configSaveBtn" type="submit">Save</button>
+          </div>
+          <button id="configClearBtn" type="button" hidden>Clear saved settings</button>
+          <small class="config-hint">Never use a service_role key in the browser.</small>
+        </form>
+        <form id="authForm" class="auth-form" hidden>
           <label for="authEmail">Email</label>
           <input id="authEmail" type="email" autocomplete="email" required />
           <label for="authPassword">Password</label>
@@ -41,14 +53,18 @@
           </div>
         </form>
         <button id="signOutBtn" type="button" hidden>Sign out</button>
+        <button id="configEditBtn" type="button" hidden>Change Supabase settings</button>
       </section>
     </aside>
 
     <main class="main">
       <header class="topbar" id="dashboard">
-        <div>
-          <h2>Market Dashboard</h2>
-          <p id="clock" aria-live="off">--</p>
+        <div class="topbar-title">
+          <div>
+            <h2>Market Terminal</h2>
+            <p id="clock" aria-live="off">--</p>
+          </div>
+          <span id="sessionBadge" class="session-badge">--</span>
         </div>
         <div class="topbar-actions">
           <select id="symbolSelect" aria-label="Symbol"></select>
@@ -57,9 +73,12 @@
             <option value="4H">4H</option>
             <option value="1D" selected>1D</option>
           </select>
-          <button id="refreshBtn" type="button">Refresh mock data</button>
+          <button id="planBtn" type="button">AI Trade Plan</button>
+          <button id="refreshBtn" class="primary" type="button">Refresh</button>
         </div>
       </header>
+
+      <div id="ticker" class="ticker" aria-label="Market ticker"></div>
 
       <section class="stats" id="stats"></section>
 
@@ -67,7 +86,10 @@
         <article class="panel chart-panel">
           <div class="panel-head">
             <h3 id="chartTitle">Chart</h3>
-            <span class="badge" id="chartChange">--</span>
+            <div class="panel-actions">
+              <span class="badge live" id="chartSource">SIM</span>
+              <span class="badge" id="chartChange">--</span>
+            </div>
           </div>
           <canvas id="priceChart" height="320"></canvas>
           <div class="chart-meta" id="chartMeta"></div>
@@ -97,16 +119,36 @@
         <article class="panel ai-panel" id="ai">
           <div class="panel-head">
             <h3>AI Assistant</h3>
-            <span class="badge warn">Informational only</span>
+            <span class="badge warn">XAU/USD • DXY only</span>
           </div>
           <div id="chatLog" class="chat-log"></div>
           <form id="chatForm" class="chat-form">
-            <input id="chatInput" type="text" placeholder="Ask AI to summarize market, risk, or news..." autocomplete="off" />
+            <input id="chatInput" type="text" placeholder="Tanya AI: analisis emas/DXY, risiko, atau cadangan..." autocomplete="off" />
             <button type="submit">Send</button>
           </form>
           <p class="disclaimer">AI output is not financial advice. Verify before acting.</p>
         </article>
+
+        <article class="panel plan-panel" id="plan">
+          <div class="panel-head">
+            <h3>AI Trade Plan</h3>
+            <span class="badge" id="planStatus">Paper only</span>
+          </div>
+          <div id="planBody" class="plan-body"><p class="muted">Tiada cadangan lagi. Pilih XAU/USD atau DXY, tekan “AI Trade Plan”.</p></div>
+          <div id="planActions" class="plan-actions" hidden>
+            <button id="approvePlanBtn" type="button">Approve (paper)</button>
+            <button id="rejectPlanBtn" type="button">Reject</button>
+          </div>
+        </article>
       </section>
+
+      <footer class="statusbar">
+        <span><span class="dot offline" id="statusDot"></span>Data: <strong id="statusProvider">SIMULATED</strong></span>
+        <span>AI: <strong id="statusAi">LOCAL RULES</strong></span>
+        <span>Focus: <strong>XAU/USD • DXY</strong></span>
+        <span>Mode: <strong>PAPER</strong></span>
+        <span id="statusClock">--</span>
+      </footer>
     </main>
   </div>
   <script src="./supabase-config.js"></script>
